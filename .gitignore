@@ -12,3 +12,4 @@ sessions/
 cache/bespoke-prompts/*.md
 # local-only Claude Code settings
 .claude/settings.local.json
+logs/
