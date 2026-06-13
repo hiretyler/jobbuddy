@@ -4,13 +4,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { findRow } from '../sheets.js';
+import { loadPersonaHtml } from '../personas.js';
 import { runClaudeJson, loadPromptTemplate, fillTemplate } from '../claude/subprocess.js';
 
 const router = Router();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..', '..');
-const PERSONAS_DIR = join(PROJECT_ROOT, 'assets', 'personas');
-const MASTER_BANK_PATH = join(PROJECT_ROOT, 'assets', 'master-bank.json');
+// Real bank is local-only (secrets/); fall back to the tracked schema example on a fresh clone.
+const MASTER_BANK_SOURCES = [
+  process.env.MASTER_BANK_PATH,
+  join(PROJECT_ROOT, 'secrets', 'master-bank.json'),
+  join(PROJECT_ROOT, 'assets', 'master-bank.example.json'),
+].filter(Boolean);
 
 const VARIANT_FILES = {
   variant1: 'variant1_gtm_enablement.html',
@@ -25,10 +30,12 @@ const PERSONA_NAME = {
 
 let _bankCache = null;
 async function loadMasterBank() {
-  if (!_bankCache) {
-    _bankCache = JSON.parse(await readFile(MASTER_BANK_PATH, 'utf8'));
+  if (_bankCache) return _bankCache;
+  for (const src of MASTER_BANK_SOURCES) {
+    try { _bankCache = JSON.parse(await readFile(src, 'utf8')); return _bankCache; }
+    catch { /* try next source */ }
   }
-  return _bankCache;
+  throw new Error('master bank not found (secrets/master-bank.json or assets/master-bank.example.json)');
 }
 
 const normText = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -59,7 +66,7 @@ function extractPersonaBulletsAndSkills(html) {
 async function loadPersona(variant) {
   const filename = VARIANT_FILES[variant];
   if (!filename) return { bullets: [], skills: [] };
-  const html = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+  const html = await loadPersonaHtml(filename);
   return extractPersonaBulletsAndSkills(html);
 }
 

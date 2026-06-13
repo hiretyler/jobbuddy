@@ -33,12 +33,20 @@ const router = Router();
 const MIN_BODY_CHARS = 300;
 const SNIPPET_CAP = 1500;
 
-const MASTER_BANK_PATH = new URL('../../assets/master-bank.json', import.meta.url);
+// Real bank is local-only (secrets/); fall back to the tracked schema example on a fresh clone.
+const MASTER_BANK_SOURCES = [
+  process.env.MASTER_BANK_PATH,
+  new URL('../../secrets/master-bank.json', import.meta.url),
+  new URL('../../assets/master-bank.example.json', import.meta.url),
+].filter(Boolean);
 let masterBankCache = null;
 async function loadMasterBank() {
   if (masterBankCache !== null) return masterBankCache;
-  try { masterBankCache = await readFile(MASTER_BANK_PATH, 'utf8'); }
-  catch { masterBankCache = ''; }
+  for (const src of MASTER_BANK_SOURCES) {
+    try { masterBankCache = await readFile(src, 'utf8'); return masterBankCache; }
+    catch { /* try next source */ }
+  }
+  masterBankCache = '';
   return masterBankCache;
 }
 

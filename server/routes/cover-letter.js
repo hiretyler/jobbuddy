@@ -1,13 +1,9 @@
 import { Router } from 'express';
-import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { findRow } from '../sheets.js';
+import { loadPersonaHtml } from '../personas.js';
 
 const router = Router();
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PERSONAS_DIR = join(__dirname, '..', '..', 'assets', 'personas');
 
 const VARIANT_FILES = {
   variant1: 'variant1_gtm_enablement.html',
@@ -174,7 +170,7 @@ router.get('/api/cover-letter/:job_id', async (req, res, next) => {
 
     const variant = job.recommended_persona || 'variant1';
     const filename = VARIANT_FILES[variant] || VARIANT_FILES.variant1;
-    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const personaHtml = await loadPersonaHtml(filename);
     const { name, contactHtml, tailParagraphs, signOffHtml } = extractFromPersona(personaHtml);
 
     const generatedFirstParagraph = extractClParagraph(job.cl_paragraph);
@@ -214,7 +210,7 @@ router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
     const { variant } = req.params;
     const filename = VARIANT_FILES[variant];
     if (!filename) return res.status(404).send(`unknown persona: ${variant}`);
-    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const personaHtml = await loadPersonaHtml(filename);
     const { name, contactHtml, tailParagraphs, signOffHtml } = extractFromPersona(personaHtml);
 
     const html = renderCoverLetter({

@@ -41,6 +41,12 @@ from Gmail on demand.
 - Credentials reused from applysprint: same Google service account (`secrets/service-account.json`,
   email `applysprint-sheets@applysprint-496714.iam.gserviceaccount.com`) and the same authorized
   Gmail OAuth token (`tokens/gmail.json`) - no re-auth needed. `.env` has the keys.
+- **Repo is PUBLIC - keep personal data local-only.** Two pieces live under gitignored `secrets/`,
+  loaded at runtime with a tracked `assets/*.example.json` fallback: `secrets/contact.json` (resume
+  phone/email/LinkedIn - injected into the persona HTML's `{{CONTACT_INFO}}` / `{{CONTACT_PHONE_EMAIL}}`
+  / `{{CONTACT_WEB_LINKEDIN}}` tokens by `server/personas.js`) and `secrets/master-bank.json` (the
+  career bank for ATS swaps). The persona HTML in `assets/personas/` carries placeholders, never real
+  contact info. Never commit real contact details or the bank back into tracked files.
 - Routes: pipeline.js (capture/score/apply/applied/inbox + DELETE /api/inbox/:id + open-folder),
   resume/cover-letter/persona/ats-swap (prep), status.js (gmail oauth + /api/scan-inbox),
   discover.js (on-demand sources).

@@ -1,13 +1,9 @@
 import { Router } from 'express';
-import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { findRow } from '../sheets.js';
+import { loadPersonaHtml } from '../personas.js';
 
 const router = Router();
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PERSONAS_DIR = join(__dirname, '..', '..', 'assets', 'personas');
 
 const VARIANT_FILES = {
   variant1: 'variant1_gtm_enablement.html',
@@ -470,7 +466,7 @@ router.get('/api/resume/:job_id', async (req, res, next) => {
 
     const variant = job.recommended_persona || 'variant1';
     const filename = VARIANT_FILES[variant] || VARIANT_FILES.variant1;
-    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const personaHtml = await loadPersonaHtml(filename);
 
     const html = buildResumeHtml({ personaHtml, job, job_id, withSidebar: true });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -488,7 +484,7 @@ router.get('/api/resume/persona/:variant', async (req, res, next) => {
     const { variant } = req.params;
     const filename = VARIANT_FILES[variant];
     if (!filename) return res.status(404).send(`unknown persona: ${variant}`);
-    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const personaHtml = await loadPersonaHtml(filename);
 
     const html = buildResumeHtml({ personaHtml, job: null, job_id: null, withSidebar: false });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

@@ -1,0 +1,45 @@
+{
+  "_comment": "Schema example only. The real bank lives at secrets/master-bank.json (gitignored). Persona keys: internal-enablement (variant1), customer-education (variant2).",
+  "meta": {
+    "version": 1,
+    "personas": ["internal-enablement", "customer-education"],
+    "purpose": "Strictly-from-bank ATS swap recommender source: every added bullet/skill comes verbatim from here.",
+    "hard_constraints": [
+      "Never compose a bullet across companies.",
+      "Never over-claim relative to claim_level."
+    ],
+    "tagging_schema": "Free-form JD keywords (tools, methodologies, motions, platforms)."
+  },
+  "roles": ["Example Company"],
+  "add_bullets": [
+    {
+      "id": "EX-1",
+      "role": "Example Company",
+      "personas": ["internal-enablement"],
+      "tags": ["example-keyword"],
+      "claim_level": "owner",
+      "metric": "00%",
+      "text": "Verbatim achievement bullet the recommender may add, owned by exactly one role."
+    }
+  ],
+  "skills": [
+    {
+      "skill": "Example Skill",
+      "personas": ["internal-enablement", "customer-education"],
+      "tags": ["example-keyword"],
+      "claim_level": "admin"
+    }
+  ],
+  "removal_candidates": {
+    "internal-enablement": [
+      { "id": "EX-R1", "role": "Example Company", "locator": "substring identifying the lowest-priority current bullet", "rationale": "Why it is first to go." }
+    ],
+    "customer-education": []
+  },
+  "protected_bullets": {
+    "internal-enablement": [
+      { "id": "EX-P1", "role": "Example Company", "locator": "substring identifying a bullet that must never be removed" }
+    ],
+    "customer-education": []
+  }
+}

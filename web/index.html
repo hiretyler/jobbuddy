@@ -78,10 +78,11 @@
 
       <div class="setup-card">
         <h2 class="section-head">Relaunch from a fresh clone</h2>
-        <p class="setup-p">If you ever start over from a GitHub download, the repo does <strong>not</strong> include secrets. You need <code>.env</code>, <code>secrets/service-account.json</code>, and <code>tokens/gmail.json</code> (reused from applysprint) before it will run.</p>
+        <p class="setup-p">If you ever start over from a GitHub download, the repo does <strong>not</strong> include secrets or personal data. You need <code>.env</code>, the Google/Gmail credentials, plus your contact info and career bank (kept local-only so they stay out of the public repo) before it will run.</p>
         <ol class="setup-steps">
           <li><strong>Install deps:</strong> <code>npm install</code></li>
           <li><strong>Restore config:</strong> drop in <code>.env</code> (keys: <code>GOOGLE_SHEET_ID</code>, the <code>GMAIL_OAUTH_*</code> set, <code>GMAIL_TOKEN_PATH</code>, <code>CLAUDE_BIN</code>, <code>CLAUDE_MODEL</code>, <code>ARCHIVE_DIR</code>, <code>PORT</code>), plus <code>secrets/service-account.json</code> and <code>tokens/gmail.json</code>.</li>
+          <li><strong>Restore personal data</strong> (gitignored, never in the repo): <code>secrets/contact.json</code> (resume contact info - copy <code>assets/contact.example.json</code> and fill it in) and <code>secrets/master-bank.json</code> (your career bank for ATS swaps - <code>assets/master-bank.example.json</code> shows the schema). Without these the app still runs but serves the placeholder contact and a near-empty swap bank.</li>
           <li><strong>Check the <code>claude</code> CLI</strong> is installed and logged in (all model work runs through it - no API key).</li>
           <li><strong>Repair the sheet headers</strong> (optional): <code>npm run bootstrap-sheet</code></li>
           <li><strong>Run it.</strong> Quick foreground: <code>npm start</code>. Always-on (launchd KeepAlive):
