@@ -16,6 +16,11 @@ Current bullets in the active persona resume (JSON array, verbatim):
 {{current_bullets}}
 ```
 
+The same current bullets grouped by the company they sit under (use this to see which job each bullet belongs to):
+```
+{{current_bullets_by_company}}
+```
+
 Current skills in the active persona resume (JSON array, verbatim):
 ```
 {{current_skills}}
@@ -63,6 +68,7 @@ Bank hard constraints (obey all):
 - Conditional protection: if a REMOVE candidate carries `protected_unless_no_tag`, only use it as a `replace` when the JD contains NONE of those tags. (E.g. the Sensera Zendesk Help Center bullet stays unless the JD has no Zendesk / support-platform / help-center signal.)
 - Honor `claim_level`: never recommend an ADD that would over-claim relative to what the JD demands and what Tyler can truthfully assert.
 - Each bullet references exactly ONE role. Never select or compose across companies.
+- WITHIN-JOB ONLY: a `replace` bullet and its paired `with` bullet MUST belong to the same company. Use `current_bullets_by_company` to find which company the `replace` bullet sits under, then pick a `with` candidate whose `role` equals that exact company. Never replace a KarmaCheck bullet with a Simpro bullet, etc. A cross-job swap is a HARD FAIL and will be discarded.
 - Max 3 bullet swaps and 3 skill swaps. Quality over quantity - output zero rather than weak swaps. If the persona already covers the JD, return empty arrays.
 - Hyphens, never em-dashes. No emojis.
 

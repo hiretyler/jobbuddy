@@ -31,17 +31,29 @@ async function loadMasterBank() {
   return _bankCache;
 }
 
+const normText = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+
 function extractPersonaBulletsAndSkills(html) {
   const doc = new JSDOM(html).window.document;
-  const bullets = Array.from(doc.querySelectorAll('ul.achievements li'))
-    .map((li) => li.textContent.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+
+  // Bullets grouped by the company they sit under, so a swap can be kept within one job.
+  const byCompany = [];
+  for (const item of doc.querySelectorAll('.experience-item')) {
+    const cr = item.querySelector('.company-role');
+    const company = cr ? normText(cr.textContent).split('|')[0].trim() : '';
+    const itemBullets = Array.from(item.querySelectorAll('ul.achievements li'))
+      .map((li) => normText(li.textContent))
+      .filter(Boolean);
+    if (itemBullets.length) byCompany.push({ company, bullets: itemBullets });
+  }
+  const bullets = byCompany.flatMap((g) => g.bullets);
+
   const skillsEl = doc.querySelector('.skills-container');
-  const skillsText = skillsEl ? skillsEl.textContent.replace(/\s+/g, ' ').trim() : '';
+  const skillsText = skillsEl ? normText(skillsEl.textContent) : '';
   const skills = skillsText
     ? skillsText.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
-  return { bullets, skills };
+  return { bullets, byCompany, skills };
 }
 
 async function loadPersona(variant) {
@@ -84,6 +96,7 @@ router.post('/api/ats-swap/:job_id', async (req, res) => {
       recommended_persona: variant,
       persona_name: personaName,
       current_bullets: JSON.stringify(current.bullets, null, 2),
+      current_bullets_by_company: JSON.stringify(current.byCompany, null, 2),
       current_skills: JSON.stringify(current.skills, null, 2),
       add_bullet_candidates: JSON.stringify(
         addBullets.map((b) => ({ id: b.id, text: b.text, role: b.role, tags: b.tags, claim_level: b.claim_level, metric: b.metric })),
@@ -101,8 +114,33 @@ router.post('/api/ats-swap/:job_id', async (req, res) => {
     });
 
     const parsed = await runClaudeJson(prompt);
-    const bullet_swaps = Array.isArray(parsed.bullet_swaps) ? parsed.bullet_swaps : [];
+    const rawBulletSwaps = Array.isArray(parsed.bullet_swaps) ? parsed.bullet_swaps : [];
     const skill_swaps = Array.isArray(parsed.skill_swaps) ? parsed.skill_swaps : [];
+
+    // Within-job enforcement: a swap may only replace a bullet with one from the SAME company.
+    // The replaced bullet's company comes from the resume; the add bullet's company is its bank
+    // `role`. If they differ, drop the swap (a Simpro bullet must never land under KarmaCheck).
+    const companyOfBullet = new Map();
+    for (const g of current.byCompany) {
+      for (const t of g.bullets) companyOfBullet.set(normText(t), g.company);
+    }
+    const roleOfAdd = new Map();
+    for (const b of addBullets) roleOfAdd.set(normText(b.text), b.role);
+
+    const bullet_swaps = [];
+    for (const s of rawBulletSwaps) {
+      const replaceCompany = companyOfBullet.get(normText(s && s.replace));
+      const withRole = roleOfAdd.get(normText(s && s.with)) || (s && s.role);
+      if (replaceCompany && withRole && replaceCompany !== withRole) {
+        process.stderr.write(
+          `[ats-swap] job=${job_id} dropped cross-job swap: replace@${replaceCompany} <- with@${withRole}\n`,
+        );
+        continue;
+      }
+      // Pin the authoritative role so the sidebar scopes the apply to the right section.
+      bullet_swaps.push(withRole ? { ...s, role: withRole } : s);
+    }
+
     res.json({ bullet_swaps, skill_swaps });
   } catch (err) {
     process.stderr.write(`[ats-swap] job=${job_id} failed: ${err.message}\n`);

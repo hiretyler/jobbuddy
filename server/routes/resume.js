@@ -14,6 +14,13 @@ const VARIANT_FILES = {
   variant2: 'variant2_customer_education.html',
 };
 
+// Captured posting titles arrive as "Role | Company | Source" (e.g.
+// "AI Enablement & Adoption Manager | Nimble Gravity | LinkedIn"). The resume's
+// job-title-header should show only the role - not the company or JD source.
+function roleOnly(title) {
+  return String(title || '').split('|')[0].trim();
+}
+
 function buildAtsSwapSidebarHtml(jobId) {
   return `
 <aside class="applysprint-sidebar" id="applysprint-sidebar">
@@ -56,7 +63,8 @@ function buildAtsSwapSidebarHtml(jobId) {
     if (applyBulletBtn) {
       var ok = applyBulletSwap(
         applyBulletBtn.getAttribute('data-replace') || '',
-        applyBulletBtn.getAttribute('data-with') || ''
+        applyBulletBtn.getAttribute('data-with') || '',
+        applyBulletBtn.getAttribute('data-role') || ''
       );
       markApplied(applyBulletBtn, ok);
       return;
@@ -75,14 +83,32 @@ function buildAtsSwapSidebarHtml(jobId) {
   function norm(s) { return String(s == null ? '' : s).replace(/\\s+/g, ' ').trim(); }
 
   // One-click apply: edit the contenteditable resume in place so Cmd+P captures the swap.
-  function applyBulletSwap(replaceText, withText) {
+  // Swaps are within-job only: when a role is supplied, the replaced bullet must live under
+  // that company's experience-item, so a Simpro bullet can never land in the KarmaCheck list.
+  function applyBulletSwap(replaceText, withText, role) {
     var want = norm(replaceText);
     if (!want) return false;
-    var items = document.querySelectorAll('.resume-container ul.achievements li');
-    for (var i = 0; i < items.length; i++) {
-      if (norm(items[i].textContent) === want) {
-        items[i].textContent = withText;
-        return true;
+    var scopes;
+    if (role) {
+      scopes = [];
+      var wantCompany = norm(role).toLowerCase();
+      var items = document.querySelectorAll('.resume-container .experience-item');
+      for (var k = 0; k < items.length; k++) {
+        var cr = items[k].querySelector('.company-role');
+        var company = cr ? norm(cr.textContent).split('|')[0].trim().toLowerCase() : '';
+        if (company === wantCompany) scopes.push(items[k]);
+      }
+      if (!scopes.length) return false; // role given but no matching company section
+    } else {
+      scopes = [document];
+    }
+    for (var s = 0; s < scopes.length; s++) {
+      var lis = scopes[s].querySelectorAll('ul.achievements li');
+      for (var i = 0; i < lis.length; i++) {
+        if (norm(lis[i].textContent) === want) {
+          lis[i].textContent = withText;
+          return true;
+        }
       }
     }
     return false;
@@ -99,6 +125,8 @@ function buildAtsSwapSidebarHtml(jobId) {
     }
     if (idx === -1) return false;
     tokens[idx] = String(addText).trim();
+    // Keep the skills line alphabetized after the swap (it ships sorted).
+    tokens.sort(function (a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
     container.textContent = tokens.join(', ');
     return true;
   }
@@ -161,7 +189,7 @@ function buildAtsSwapSidebarHtml(jobId) {
             (meta ? '<div class="swap-meta">' + escapeHtml(meta) + '</div>' : '') +
             (reason ? '<div class="swap-reason">' + escapeHtml(reason) + '</div>' : '') +
             '<div class="swap-actions">' +
-              '<button type="button" data-action="apply-bullet" data-replace="' + escapeHtml(replaceText) + '" data-with="' + escapeHtml(withText) + '">Apply swap</button>' +
+              '<button type="button" data-action="apply-bullet" data-replace="' + escapeHtml(replaceText) + '" data-with="' + escapeHtml(withText) + '" data-role="' + escapeHtml(String(s.role || '')) + '">Apply swap</button>' +
               '<button type="button" data-action="copy-with" data-text="' + escapeHtml(withText) + '">Copy "with"</button>' +
             '</div>' +
           '</li>';
@@ -402,7 +430,7 @@ function buildResumeHtml({ personaHtml, job, job_id, withSidebar }) {
 
   if (job && job.title) {
     const titleHeader = doc.querySelector('.job-title-header');
-    if (titleHeader) titleHeader.textContent = job.title;
+    if (titleHeader) titleHeader.textContent = roleOnly(job.title);
   }
 
   {
