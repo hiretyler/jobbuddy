@@ -95,6 +95,7 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
 }
 .menu-pop a:hover { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
+.menu-pop[hidden] { display: none; }
 
 /* ---- page ---- */
 .page {
