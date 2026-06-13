@@ -88,9 +88,31 @@ function renderJobCard(job) {
   const prepBtn = el('button', { class: 'btn-primary', type: 'button', text: 'Prep to apply' });
   prepBtn.addEventListener('click', () => prepToApply(job, card, prepBtn));
   actions.append(prepBtn);
+
+  const delBtn = el('button', { class: 'btn-delete', type: 'button', text: 'Delete' });
+  delBtn.addEventListener('click', () => deleteJob(job, card, delBtn));
+  actions.append(delBtn);
+
   card.append(actions);
 
   return card;
+}
+
+async function deleteJob(job, card, btn) {
+  const label = job.company || job.title || 'this job';
+  if (!window.confirm(`Delete ${label} from the inbox? This can't be undone.`)) return;
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  const data = await api(`/api/inbox/${encodeURIComponent(job.job_id)}`, { method: 'DELETE' });
+  if (data.ok) {
+    card.remove();
+    toast(`Deleted: ${label}`);
+    $('#inbox-empty').hidden = $('#inbox-list').children.length > 0 || $('#applied-list').children.length > 0;
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Delete';
+    toast(data.error || 'Could not delete.');
+  }
 }
 
 async function prepToApply(job, card, btn, persona) {

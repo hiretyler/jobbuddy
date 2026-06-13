@@ -370,32 +370,9 @@ const SIDEBAR_CSS = `
   .banner-enable:hover, .banner-revert:hover { background: #ecfeff; }
   .resume-container[contenteditable="true"]:focus { outline: 2px solid #0e7490; outline-offset: 4px; }
 
-  .applysprint-edit-confirm {
-    border: 1px solid #0e7490;
-    border-radius: 6px;
-    padding: 16px 18px;
-    max-width: 420px;
-    font: 13px/1.45 -apple-system, system-ui, sans-serif;
-    color: #1f2937;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.18);
-  }
-  .applysprint-edit-confirm::backdrop { background: rgba(15, 23, 42, 0.35); }
-  .applysprint-edit-confirm h3 { margin: 0 0 8px 0; font-size: 14px; color: #0f172a; }
-  .applysprint-edit-confirm p { margin: 0 0 14px 0; font-size: 13px; color: #334155; }
-  .applysprint-edit-confirm .dialog-actions {
-    display: flex; gap: 8px; justify-content: flex-end;
-  }
-  .applysprint-edit-confirm button {
-    font-size: 12px; padding: 5px 12px; border-radius: 3px; cursor: pointer;
-    border: 1px solid #0e7490; background: #fff; color: #0e7490;
-  }
-  .applysprint-edit-confirm button.primary { background: #0e7490; color: #fff; }
-  .applysprint-edit-confirm button:hover { filter: brightness(0.97); }
-
   @media print {
     .applysprint-sidebar,
-    .applysprint-banner,
-    .applysprint-edit-confirm { display: none !important; }
+    .applysprint-banner { display: none !important; }
     .resume-container[contenteditable="true"]:focus { outline: 0; }
   }
 `;
@@ -407,7 +384,7 @@ function escapeHtml(s) {
 }
 
 // Wraps a persona resume in the editable interface (read-only banner + "Enable editing"
-// confirm dialog). job is optional: when present we tailor the title/job-title-header and
+// button that flips contenteditable on directly). job is optional: when present we tailor the title/job-title-header and
 // attach the ATS-swap sidebar; when null (persona-only fallback) we render the canonical
 // resume with no job-specific tailoring and no sidebar.
 function buildResumeHtml({ personaHtml, job, job_id, withSidebar }) {
@@ -442,42 +419,15 @@ function buildResumeHtml({ personaHtml, job, job_id, withSidebar }) {
       `<button type="button" class="banner-enable" id="banner-enable">Enable editing</button>`;
     doc.body.insertBefore(banner, doc.body.firstChild);
 
-    const dialog = doc.createElement('dialog');
-    dialog.className = 'applysprint-edit-confirm';
-    dialog.id = 'applysprint-edit-confirm';
-    dialog.innerHTML = `
-      <h3>Editing breaks momentum</h3>
-      <p>Each in-browser edit pulls time away from your apply target. If the canonical resume isn't a fit, you're likely customizing a long-shot. Recommended: ship the canonical and move on.</p>
-      <div class="dialog-actions">
-        <button type="button" id="edit-cancel" autofocus>Cancel</button>
-        <button type="button" class="primary" id="edit-confirm">Edit anyway</button>
-      </div>
-    `;
-    doc.body.appendChild(dialog);
-
     const editScript = doc.createElement('script');
     editScript.textContent = `
 (function () {
   var banner = document.getElementById('applysprint-banner');
   var bannerText = document.getElementById('applysprint-banner-text');
-  var dialog = document.getElementById('applysprint-edit-confirm');
   var container = document.querySelector('.resume-container');
 
   document.addEventListener('click', function (e) {
     if (e.target.id === 'banner-enable') {
-      if (dialog && typeof dialog.showModal === 'function') {
-        dialog.showModal();
-      } else {
-        if (confirm("Editing breaks momentum. Edit anyway?")) enableEdit();
-      }
-      return;
-    }
-    if (e.target.id === 'edit-cancel') {
-      if (dialog && dialog.open) dialog.close();
-      return;
-    }
-    if (e.target.id === 'edit-confirm') {
-      if (dialog && dialog.open) dialog.close();
       enableEdit();
       return;
     }

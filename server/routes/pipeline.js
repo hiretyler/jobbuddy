@@ -16,7 +16,7 @@
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
-import { readTab, findRow, appendRows, updateRow } from '../sheets.js';
+import { readTab, findRow, appendRows, updateRow, deleteRow } from '../sheets.js';
 import { canonicalIdentity } from '../identity.js';
 import {
   scoreSnippet,
@@ -135,11 +135,29 @@ router.post('/jd-capture', cors, async (req, res, next) => {
   try {
     const b = req.body || {};
     const url = String(b.url || '').trim();
-    const body = String(b.body || '');
-    const title = String(b.role || b.title || '').trim();
+    let body = String(b.body || '');
+    let title = String(b.role || b.title || '').trim();
+    let company = (b.company && String(b.company).trim()) || '';
     const source = normSource(b.source, 'bookmarklet');
 
     if (!url) return res.status(400).json({ ok: false, error: 'missing url' });
+
+    // The JD often lives in a cross-origin iframe (Greenhouse/Lever embeds) the bookmarklet
+    // can't read. It hands us that iframe's src as fetch_url; pull the JD server-side.
+    if (body.trim().length < MIN_BODY_CHARS) {
+      const fetchUrl = String(b.fetch_url || '').trim();
+      if (fetchUrl && !isAuthWalled(fetchUrl)) {
+        try {
+          const ext = await ingestUrl(fetchUrl);
+          if (ext && String(ext.jd_body || '').trim().length >= MIN_BODY_CHARS) {
+            body = ext.jd_body;
+            if (!title && ext.title) title = ext.title;
+            if (!company && ext.company) company = ext.company;
+          }
+        } catch { /* fall through to the error below */ }
+      }
+    }
+
     if (body.trim().length < MIN_BODY_CHARS) {
       return res.status(400).json({
         ok: false,
@@ -147,7 +165,7 @@ router.post('/jd-capture', cors, async (req, res, next) => {
       });
     }
 
-    const company = (b.company && String(b.company).trim()) || deriveCompany({ title, url, body });
+    if (!company) company = deriveCompany({ title, url, body });
     const { canonicalUrl } = canonicalIdentity(url);
 
     const job_id = randomUUID();
@@ -292,6 +310,22 @@ router.get('/api/inbox', async (_req, res, next) => {
     for (const j of jobs) delete j.captured_at;
     res.json({ jobs });
   } catch (err) {
+    next(err);
+  }
+});
+
+// --- DELETE /api/inbox/:job_id -------------------------------------------------
+// Reject/remove a job from the Inbox (dupe, or a poor score not worth keeping). Only
+// touches the Inbox tab; any Applications-tracker row already written stays intact.
+router.delete('/api/inbox/:job_id', async (req, res, next) => {
+  try {
+    const { job_id } = req.params;
+    await deleteRow('Inbox', 'job_id', job_id);
+    res.json({ ok: true });
+  } catch (err) {
+    if (/no row matched/.test(err.message)) {
+      return res.status(404).json({ ok: false, error: 'job not found' });
+    }
     next(err);
   }
 });

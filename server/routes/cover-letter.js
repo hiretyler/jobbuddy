@@ -102,32 +102,11 @@ function renderCoverLetter({ company, title, name, contactHtml, generatedFirstPa
   .banner-btn:hover { background: #ecfeff; }
   .page[contenteditable="true"]:focus { outline: 2px solid #0e7490; outline-offset: 4px; }
 
-  .applysprint-dialog {
-    border: 1px solid #9ca3af; border-radius: 6px; padding: 0; max-width: 420px;
-    font: 13px/1.45 -apple-system, system-ui, sans-serif; color: #111;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-  }
-  .applysprint-dialog::backdrop { background: rgba(0,0,0,0.35); }
-  .applysprint-dialog .dlg-inner { padding: 16px 18px 14px; }
-  .applysprint-dialog h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
-  .applysprint-dialog p { font-size: 13px; margin: 0 0 14px; color: #374151; }
-  .applysprint-dialog .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
-  .applysprint-dialog button {
-    font-size: 12px; padding: 5px 12px; border-radius: 4px; cursor: pointer;
-    border: 1px solid #9ca3af; background: #fff; color: #111;
-  }
-  .applysprint-dialog button.primary {
-    border-color: #0e7490; background: #0e7490; color: #fff;
-  }
-  .applysprint-dialog button:hover { background: #f3f4f6; }
-  .applysprint-dialog button.primary:hover { background: #0c6680; }
-
   @media print {
     @page { size: 8.5in 11in; margin: 0; }
     body { background: white; padding: 0; margin: 0; }
     .page { box-shadow: none; max-width: none; width: 100%; padding: 0.5in 0.75in; }
     .applysprint-banner { display: none !important; }
-    .applysprint-dialog { display: none !important; }
     .banner-btn { display: none !important; }
     .page[contenteditable="true"]:focus { outline: 0; }
   }
@@ -135,16 +114,6 @@ function renderCoverLetter({ company, title, name, contactHtml, generatedFirstPa
 </head>
 <body>
 <div class="applysprint-banner" data-mode="readonly"><span class="banner-text">${esc(readOnlyText)}</span> <button type="button" class="banner-btn banner-enable">Enable editing</button><button type="button" class="banner-btn banner-revert" hidden>Revert</button></div>
-<dialog class="applysprint-dialog" id="edit-confirm">
-  <div class="dlg-inner">
-    <h2>Editing breaks momentum</h2>
-    <p>Each in-browser edit pulls time away from your apply target. If the canonical cover-letter paragraphs aren't a fit, you're likely customizing a long-shot. Recommended: ship the canonical and move on.</p>
-    <div class="dlg-actions">
-      <button type="button" class="dlg-cancel" autofocus>Cancel</button>
-      <button type="button" class="dlg-confirm primary">Edit anyway</button>
-    </div>
-  </div>
-</dialog>
 <div class="page" contenteditable="false" spellcheck="true">
   <div class="letter-header">
     <div class="date">${esc(dateStr)}</div>
@@ -162,9 +131,6 @@ ${paragraphs}
   var bannerText = banner.querySelector('.banner-text');
   var enableBtn = banner.querySelector('.banner-enable');
   var revertBtn = banner.querySelector('.banner-revert');
-  var dialog = document.querySelector('#edit-confirm');
-  var cancelBtn = dialog.querySelector('.dlg-cancel');
-  var confirmBtn = dialog.querySelector('.dlg-confirm');
   var readOnlyText = ${JSON.stringify(readOnlyText)};
   var editingText = readOnlyText.replace(/^Read-only/, 'Editing enabled');
 
@@ -185,21 +151,7 @@ ${paragraphs}
   }
 
   enableBtn.addEventListener('click', function () {
-    if (typeof dialog.showModal === 'function') {
-      dialog.showModal();
-    } else {
-      // Fallback for browsers without <dialog> support
-      if (window.confirm('Editing breaks momentum. Edit anyway?')) setEditable();
-    }
-  });
-
-  cancelBtn.addEventListener('click', function () {
-    dialog.close('cancel');
-  });
-
-  confirmBtn.addEventListener('click', function () {
     setEditable();
-    dialog.close('confirm');
   });
 
   revertBtn.addEventListener('click', function () {

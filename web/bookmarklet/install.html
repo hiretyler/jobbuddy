@@ -15,124 +15,24 @@
 </head>
 <body>
 <h1>JobBuddy JD grabber</h1>
-<p>One bookmarklet for every job page. Drag the bookmark below to your bookmarks bar. On a job posting, click it: it grabs the URL + visible JD text (plus posting date and applicant count when the page shows them) and sends it straight to JobBuddy. On strict sites (LinkedIn, Workday, iCIMS, Eightfold) where the page blocks background requests, it automatically falls back to a brief popup that routes through <code>localhost</code> to save it. The captured job lands in your Inbox, scored, ready to prep.</p>
+<p>One bookmarklet for every job page. Drag the bookmark below to your bookmarks bar. On a job posting, click it: it grabs the URL + visible JD text (plus posting date and applicant count when the page shows them) and sends it straight to JobBuddy. It also reads the description out of same-origin embeds (iCIMS) and, when the JD sits in a cross-origin board iframe (Greenhouse, Lever, and friends), hands that board URL to JobBuddy to fetch server-side. On strict sites (LinkedIn, Workday, Eightfold) where the page blocks background requests, it automatically falls back to a brief popup that routes through <code>localhost</code> to save it. The captured job lands in your Inbox, scored, ready to prep.</p>
 
-<a class="bookmarklet" href="javascript:(function(){function q(s,r){r=r||document;var e=r.querySelector(s);return e?(e.innerText||e.textContent||'').trim():''}function big(){var m=document.querySelector('main')||document.body,best='',els=m.querySelectorAll('article,section,div');for(var i=0;i<els.length;i++){var t=(els[i].innerText||'').trim();if(t.length>best.length)best=t}return best||(m.innerText||'').trim()}function jsonLd(){var s=document.querySelectorAll('script[type=%22application/ld+json%22]');for(var i=0;i<s.length;i++){try{var d=JSON.parse(s[i].textContent);var a=Array.isArray(d)?d:[d];for(var j=0;j<a.length;j++){if(a[j]&&a[j]['@type']==='JobPosting')return a[j]}}catch(e){}}return null}function meta(){var h=location.hostname,pd='',na='';if(h.indexOf('linkedin.com')>-1){pd=q('.job-details-jobs-unified-top-card__primary-description-container time')||q('.posted-time-ago__text')||q('span.tvm__text--neutral time')||'';var ac=q('.job-details-jobs-unified-top-card__applicant-count')||q('.num-applicants__caption')||'';var am=ac.match(/([0-9,]+)\\s*applicant/i);if(am)na=am[1].replace(/,/g,'')}else if(h.indexOf('builtin.com')>-1){pd=q('[data-id=%22posted-date%22]')||q('.job-post-date')||q('time')||'';var bc=q('[data-id=%22applicant-count%22]')||'';var bm=bc.match(/([0-9,]+)/);if(bm)na=bm[1].replace(/,/g,'')}return{posted_date:pd,num_applicants:na}}function extract(){var h=location.hostname,site='generic',title='',company='',loc='',body='';if(h.indexOf('linkedin.com')>-1){site='linkedin';title=q('.job-details-jobs-unified-top-card__job-title');company=q('.job-details-jobs-unified-top-card__company-name');loc=q('.job-details-jobs-unified-top-card__bullet');body=q('.jobs-description__content')}else if(h.indexOf('ashbyhq.com')>-1){site='ashby';title=q('h1');company=q('[class*=%22company-name%22 i]')||q('[class*=%22companyName%22 i]');body=q('[class*=%22job-description%22 i]')||q('[class*=%22jobDescription%22 i]')||q('[class*=%22posting-description%22 i]')||q('main')}else if(h.indexOf('workday')>-1||h.indexOf('myworkdayjobs')>-1){site='workday';title=q('[data-automation-id=%22jobPostingHeader%22]');body=q('[data-automation-id=%22job-posting-details%22]')}else if(h.indexOf('icims')>-1){site='icims';title=q('.iCIMS_JobHeader h1');body=q('.iCIMS_JobContent')}if(!title){title=q('h1')||(document.querySelector('meta[property=%22og:title%22]')||{}).content||document.title}var ld=jsonLd();if(ld){if(!title&&ld.title)title=ld.title;if(!company&&ld.hiringOrganization)company=ld.hiringOrganization.name||'';if(!loc&&ld.jobLocation){var jl=Array.isArray(ld.jobLocation)?ld.jobLocation[0]:ld.jobLocation;if(jl&&jl.address)loc=jl.address.addressLocality||jl.address.addressRegion||''}if(!body&&ld.description){var tmp=document.createElement('div');tmp.innerHTML=ld.description;body=(tmp.innerText||tmp.textContent||'').trim()}}if(!body)body=big();var md=meta();var pd=md.posted_date;if(!pd&&ld&&ld.datePosted)pd=ld.datePosted;return{url:location.href,site:site,source:'desktop',company:company,role:title,location:loc,body:body,posted_date:pd,num_applicants:md.num_applicants,captured_at:new Date().toISOString()}}function popup(p){var b64=btoa(unescape(encodeURIComponent(JSON.stringify(p))));var w=window.open('http://localhost:3000/bookmarklet/proxy?#'+b64,'jobbuddy','width=480,height=320');if(!w)alert('JobBuddy: popup blocked - allow popups for this site.');else alert('Saving to JobBuddy...')}var payload=extract();if(payload.body.length<300){alert('JobBuddy: JD didn\'t load yet - scroll until the description is visible, then click again.');return}try{fetch('http://localhost:3000/jd-capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json().catch(function(){return{}})}).then(function(data){try{if(typeof BroadcastChannel==='function'){var bc=new BroadcastChannel('jobbuddy');bc.postMessage({type:'jd-captured',job_id:data&&data.job_id,url:payload.url});bc.close()}}catch(_e){}alert('Saved to JobBuddy.')}).catch(function(){popup(payload)})}catch(e){popup(payload)}})();">Grab JD &rarr; JobBuddy</a>
+<a class="bookmarklet" href="javascript:(function(){function q(s,r){r=r||document;var e=r.querySelector(s);return e?(e.innerText||e.textContent||'').trim():''}function docs(){var out=[document];try{var f=document.getElementsByTagName('iframe');for(var i=0;i<f.length;i++){try{var d=f[i].contentDocument;if(d&&d.body)out.push(d)}catch(e){}}}catch(e){}return out}function big(){var best='',ds=docs();for(var k=0;k<ds.length;k++){var root=ds[k].querySelector('main')||ds[k].body;if(!root)continue;var els=root.querySelectorAll('article,section,div');for(var i=0;i<els.length;i++){var t=(els[i].innerText||'').trim();if(t.length>best.length)best=t}if(!els.length){var rt=(root.innerText||'').trim();if(rt.length>best.length)best=rt}}return best}function atsIframe(){var f=document.getElementsByTagName('iframe'),re=/greenhouse|lever|ashbyhq|workable|smartrecruiters|jobvite|bamboohr|recruitee|icims|myworkday/i;for(var i=0;i<f.length;i++){var acc=false;try{acc=!!(f[i].contentDocument&&f[i].contentDocument.body)}catch(e){acc=false}if(!acc){var s=f[i].src||'';if(re.test(s))return s}}return ''}function jsonLd(){var s=document.querySelectorAll('script[type=%22application/ld+json%22]');for(var i=0;i<s.length;i++){try{var d=JSON.parse(s[i].textContent);var a=Array.isArray(d)?d:[d];for(var j=0;j<a.length;j++){if(a[j]&&a[j]['@type']==='JobPosting')return a[j]}}catch(e){}}return null}function meta(){var h=location.hostname,pd='',na='';if(h.indexOf('linkedin.com')>-1){pd=q('.job-details-jobs-unified-top-card__primary-description-container time')||q('.posted-time-ago__text')||q('span.tvm__text--neutral time')||'';var ac=q('.job-details-jobs-unified-top-card__applicant-count')||q('.num-applicants__caption')||'';var am=ac.match(/([0-9,]+)\s*applicant/i);if(am)na=am[1].replace(/,/g,'')}else if(h.indexOf('builtin.com')>-1){pd=q('[data-id=%22posted-date%22]')||q('.job-post-date')||q('time')||'';var bc=q('[data-id=%22applicant-count%22]')||'';var bm=bc.match(/([0-9,]+)/);if(bm)na=bm[1].replace(/,/g,'')}return{posted_date:pd,num_applicants:na}}function extract(){var h=location.hostname,site='generic',title='',company='',loc='',body='';if(h.indexOf('linkedin.com')>-1){site='linkedin';title=q('.job-details-jobs-unified-top-card__job-title');company=q('.job-details-jobs-unified-top-card__company-name');loc=q('.job-details-jobs-unified-top-card__bullet');body=q('.jobs-description__content')}else if(h.indexOf('ashbyhq.com')>-1){site='ashby';title=q('h1');company=q('[class*=%22company-name%22 i]')||q('[class*=%22companyName%22 i]');body=q('[class*=%22job-description%22 i]')||q('[class*=%22jobDescription%22 i]')||q('[class*=%22posting-description%22 i]')||q('main')}else if(h.indexOf('workday')>-1||h.indexOf('myworkdayjobs')>-1){site='workday';title=q('[data-automation-id=%22jobPostingHeader%22]');body=q('[data-automation-id=%22job-posting-details%22]')}else if(h.indexOf('icims')>-1){site='icims';title=q('.iCIMS_JobHeader h1');body=q('.iCIMS_JobContent')}if(!title){title=q('h1')||(document.querySelector('meta[property=%22og:title%22]')||{}).content||document.title}var ld=jsonLd();if(ld){if(!title&&ld.title)title=ld.title;if(!company&&ld.hiringOrganization)company=ld.hiringOrganization.name||'';if(!loc&&ld.jobLocation){var jl=Array.isArray(ld.jobLocation)?ld.jobLocation[0]:ld.jobLocation;if(jl&&jl.address)loc=jl.address.addressLocality||jl.address.addressRegion||''}if(!body&&ld.description){var tmp=document.createElement('div');tmp.innerHTML=ld.description;body=(tmp.innerText||tmp.textContent||'').trim()}}var fb=big();if(fb.length>body.length)body=fb;var md=meta();var pd=md.posted_date;if(!pd&&ld&&ld.datePosted)pd=ld.datePosted;return{url:location.href,site:site,source:'desktop',company:company,role:title,location:loc,body:body,posted_date:pd,num_applicants:md.num_applicants,captured_at:new Date().toISOString()}}function popup(p){var b64=btoa(unescape(encodeURIComponent(JSON.stringify(p))));var w=window.open('http://localhost:3000/bookmarklet/proxy?#'+b64,'jobbuddy','width=480,height=320');if(!w)alert('JobBuddy: popup blocked - allow popups for this site.');else alert('Saving to JobBuddy...')}var payload=extract();if(payload.body.length<300){var fu=atsIframe();if(fu){payload.fetch_url=fu}else{alert('JobBuddy: JD didn\'t load yet - scroll until the description is visible, then click again.');return}}try{fetch('http://localhost:3000/jd-capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json().catch(function(){return{}})}).then(function(data){try{if(typeof BroadcastChannel==='function'){var bc=new BroadcastChannel('jobbuddy');bc.postMessage({type:'jd-captured',job_id:data&&data.job_id,url:payload.url});bc.close()}}catch(_e){}alert('Saved to JobBuddy.')}).catch(function(){popup(payload)})}catch(e){popup(payload)}})();">Grab JD &rarr; JobBuddy</a>
 
-<p>If selectors break, the source is below - tweak and re-drag.</p>
+<p>If selectors break, the source is below - tweak <code>scripts/gen-bookmarklet.mjs</code> and re-run it.</p>
 
 <pre><code>(function(){
-  function q(s, r){ r = r || document; var e = r.querySelector(s); return e ? (e.innerText||e.textContent||'').trim() : '' }
-  function big(){
-    var m = document.querySelector('main') || document.body, best = '', els = m.querySelectorAll('article,section,div');
-    for (var i = 0; i &lt; els.length; i++){ var t = (els[i].innerText||'').trim(); if (t.length &gt; best.length) best = t }
-    return best || (m.innerText||'').trim()
-  }
-  function jsonLd(){
-    var s = document.querySelectorAll('script[type="application/ld+json"]');
-    for (var i = 0; i &lt; s.length; i++){
-      try {
-        var d = JSON.parse(s[i].textContent);
-        var a = Array.isArray(d) ? d : [d];
-        for (var j = 0; j &lt; a.length; j++){ if (a[j] &amp;&amp; a[j]['@type'] === 'JobPosting') return a[j] }
-      } catch(e) {}
-    }
-    return null
-  }
-  // Posting date + applicant count, where LinkedIn / BuiltIn expose them on-page.
-  function meta(){
-    var h = location.hostname, pd = '', na = '';
-    if (h.indexOf('linkedin.com') &gt; -1){
-      pd = q('.job-details-jobs-unified-top-card__primary-description-container time')
-        || q('.posted-time-ago__text') || q('span.tvm__text--neutral time') || '';
-      var ac = q('.job-details-jobs-unified-top-card__applicant-count') || q('.num-applicants__caption') || '';
-      var am = ac.match(/([0-9,]+)\s*applicant/i); if (am) na = am[1].replace(/,/g,'');
-    } else if (h.indexOf('builtin.com') &gt; -1){
-      pd = q('[data-id="posted-date"]') || q('.job-post-date') || q('time') || '';
-      var bc = q('[data-id="applicant-count"]') || '';
-      var bm = bc.match(/([0-9,]+)/); if (bm) na = bm[1].replace(/,/g,'');
-    }
-    return { posted_date: pd, num_applicants: na };
-  }
-  // Shared extraction: site-aware selectors, JSON-LD, then largest-text fallback.
-  function extract(){
-    var h = location.hostname, site = 'generic', title = '', company = '', loc = '', body = '';
-    if (h.indexOf('linkedin.com') &gt; -1){
-      site = 'linkedin';
-      title = q('.job-details-jobs-unified-top-card__job-title');
-      company = q('.job-details-jobs-unified-top-card__company-name');
-      loc = q('.job-details-jobs-unified-top-card__bullet');
-      body = q('.jobs-description__content');
-    } else if (h.indexOf('ashbyhq.com') &gt; -1){
-      site = 'ashby';
-      title = q('h1');
-      company = q('[class*="company-name" i]') || q('[class*="companyName" i]');
-      body = q('[class*="job-description" i]') || q('[class*="jobDescription" i]') || q('[class*="posting-description" i]') || q('main');
-    } else if (h.indexOf('workday') &gt; -1 || h.indexOf('myworkdayjobs') &gt; -1){
-      site = 'workday';
-      title = q('[data-automation-id="jobPostingHeader"]');
-      body = q('[data-automation-id="job-posting-details"]');
-    } else if (h.indexOf('icims') &gt; -1){
-      site = 'icims';
-      title = q('.iCIMS_JobHeader h1');
-      body = q('.iCIMS_JobContent');
-    }
-    if (!title){ title = q('h1') || (document.querySelector('meta[property="og:title"]')||{}).content || document.title }
-    var ld = jsonLd();
-    if (ld){
-      if (!title &amp;&amp; ld.title) title = ld.title;
-      if (!company &amp;&amp; ld.hiringOrganization) company = ld.hiringOrganization.name || '';
-      if (!loc &amp;&amp; ld.jobLocation){
-        var jl = Array.isArray(ld.jobLocation) ? ld.jobLocation[0] : ld.jobLocation;
-        if (jl &amp;&amp; jl.address) loc = jl.address.addressLocality || jl.address.addressRegion || '';
-      }
-      if (!body &amp;&amp; ld.description){
-        var tmp = document.createElement('div'); tmp.innerHTML = ld.description;
-        body = (tmp.innerText || tmp.textContent || '').trim();
-      }
-    }
-    if (!body) body = big();
-    var md = meta();
-    var pd = md.posted_date;
-    if (!pd &amp;&amp; ld &amp;&amp; ld.datePosted) pd = ld.datePosted;
-    return { url: location.href, site: site, source: 'desktop', company: company, role: title, location: loc, body: body, posted_date: pd, num_applicants: md.num_applicants, captured_at: new Date().toISOString() };
-  }
-  // CSP-strict fallback: hand the payload to the localhost proxy via URL hash (NOT postMessage -
-  // LinkedIn CSP and GAS COOP both break direct paths). The proxy POSTs and broadcasts.
-  function popup(p){
-    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(p))));
-    var w = window.open('http://localhost:3000/bookmarklet/proxy?#' + b64, 'jobbuddy', 'width=480,height=320');
-    if (!w) alert('JobBuddy: popup blocked - allow popups for this site.');
-    else alert('Saving to JobBuddy...');
-  }
-  var payload = extract();
-  if (payload.body.length &lt; 300){
-    alert('JobBuddy: JD didn\'t load yet - scroll until the description is visible, then click again.');
-    return;
-  }
-  // Try a direct fetch to localhost first. On CSP/cross-origin failure, fall back to the
-  // popup-proxy. On the direct path we broadcast jd-captured ourselves so the dashboard updates.
-  try {
-    fetch('http://localhost:3000/jd-capture', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).then(function(r){
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json().catch(function(){ return {} });
-    }).then(function(data){
-      try {
-        if (typeof BroadcastChannel === 'function'){
-          var bc = new BroadcastChannel('jobbuddy');
-          bc.postMessage({ type: 'jd-captured', job_id: data &amp;&amp; data.job_id, url: payload.url });
-          bc.close();
-        }
-      } catch(_e) {}
-      alert('Saved to JobBuddy.');
-    }).catch(function(){ popup(payload); });
-  } catch(e){
-    popup(payload);
-  }
+function q(s,r){r=r||document;var e=r.querySelector(s);return e?(e.innerText||e.textContent||'').trim():''}
+function docs(){var out=[document];try{var f=document.getElementsByTagName('iframe');for(var i=0;i&lt;f.length;i++){try{var d=f[i].contentDocument;if(d&amp;&amp;d.body)out.push(d)}catch(e){}}}catch(e){}return out}
+function big(){var best='',ds=docs();for(var k=0;k&lt;ds.length;k++){var root=ds[k].querySelector('main')||ds[k].body;if(!root)continue;var els=root.querySelectorAll('article,section,div');for(var i=0;i&lt;els.length;i++){var t=(els[i].innerText||'').trim();if(t.length&gt;best.length)best=t}if(!els.length){var rt=(root.innerText||'').trim();if(rt.length&gt;best.length)best=rt}}return best}
+function atsIframe(){var f=document.getElementsByTagName('iframe'),re=/greenhouse|lever|ashbyhq|workable|smartrecruiters|jobvite|bamboohr|recruitee|icims|myworkday/i;for(var i=0;i&lt;f.length;i++){var acc=false;try{acc=!!(f[i].contentDocument&amp;&amp;f[i].contentDocument.body)}catch(e){acc=false}if(!acc){var s=f[i].src||'';if(re.test(s))return s}}return ''}
+function jsonLd(){var s=document.querySelectorAll('script[type="application/ld+json"]');for(var i=0;i&lt;s.length;i++){try{var d=JSON.parse(s[i].textContent);var a=Array.isArray(d)?d:[d];for(var j=0;j&lt;a.length;j++){if(a[j]&amp;&amp;a[j]['@type']==='JobPosting')return a[j]}}catch(e){}}return null}
+function meta(){var h=location.hostname,pd='',na='';if(h.indexOf('linkedin.com')&gt;-1){pd=q('.job-details-jobs-unified-top-card__primary-description-container time')||q('.posted-time-ago__text')||q('span.tvm__text--neutral time')||'';var ac=q('.job-details-jobs-unified-top-card__applicant-count')||q('.num-applicants__caption')||'';var am=ac.match(/([0-9,]+)\s*applicant/i);if(am)na=am[1].replace(/,/g,'')}else if(h.indexOf('builtin.com')&gt;-1){pd=q('[data-id="posted-date"]')||q('.job-post-date')||q('time')||'';var bc=q('[data-id="applicant-count"]')||'';var bm=bc.match(/([0-9,]+)/);if(bm)na=bm[1].replace(/,/g,'')}return{posted_date:pd,num_applicants:na}}
+function extract(){var h=location.hostname,site='generic',title='',company='',loc='',body='';if(h.indexOf('linkedin.com')&gt;-1){site='linkedin';title=q('.job-details-jobs-unified-top-card__job-title');company=q('.job-details-jobs-unified-top-card__company-name');loc=q('.job-details-jobs-unified-top-card__bullet');body=q('.jobs-description__content')}else if(h.indexOf('ashbyhq.com')&gt;-1){site='ashby';title=q('h1');company=q('[class*="company-name" i]')||q('[class*="companyName" i]');body=q('[class*="job-description" i]')||q('[class*="jobDescription" i]')||q('[class*="posting-description" i]')||q('main')}else if(h.indexOf('workday')&gt;-1||h.indexOf('myworkdayjobs')&gt;-1){site='workday';title=q('[data-automation-id="jobPostingHeader"]');body=q('[data-automation-id="job-posting-details"]')}else if(h.indexOf('icims')&gt;-1){site='icims';title=q('.iCIMS_JobHeader h1');body=q('.iCIMS_JobContent')}if(!title){title=q('h1')||(document.querySelector('meta[property="og:title"]')||{}).content||document.title}var ld=jsonLd();if(ld){if(!title&amp;&amp;ld.title)title=ld.title;if(!company&amp;&amp;ld.hiringOrganization)company=ld.hiringOrganization.name||'';if(!loc&amp;&amp;ld.jobLocation){var jl=Array.isArray(ld.jobLocation)?ld.jobLocation[0]:ld.jobLocation;if(jl&amp;&amp;jl.address)loc=jl.address.addressLocality||jl.address.addressRegion||''}if(!body&amp;&amp;ld.description){var tmp=document.createElement('div');tmp.innerHTML=ld.description;body=(tmp.innerText||tmp.textContent||'').trim()}}var fb=big();if(fb.length&gt;body.length)body=fb;var md=meta();var pd=md.posted_date;if(!pd&amp;&amp;ld&amp;&amp;ld.datePosted)pd=ld.datePosted;return{url:location.href,site:site,source:'desktop',company:company,role:title,location:loc,body:body,posted_date:pd,num_applicants:md.num_applicants,captured_at:new Date().toISOString()}}
+function popup(p){var b64=btoa(unescape(encodeURIComponent(JSON.stringify(p))));var w=window.open('http://localhost:3000/bookmarklet/proxy?#'+b64,'jobbuddy','width=480,height=320');if(!w)alert('JobBuddy: popup blocked - allow popups for this site.');else alert('Saving to JobBuddy...')}
+var payload=extract();
+if(payload.body.length&lt;300){var fu=atsIframe();if(fu){payload.fetch_url=fu}else{alert('JobBuddy: JD didn\'t load yet - scroll until the description is visible, then click again.');return}}
+try{fetch('http://localhost:3000/jd-capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json().catch(function(){return{}})}).then(function(data){try{if(typeof BroadcastChannel==='function'){var bc=new BroadcastChannel('jobbuddy');bc.postMessage({type:'jd-captured',job_id:data&amp;&amp;data.job_id,url:payload.url});bc.close()}}catch(_e){}alert('Saved to JobBuddy.')}).catch(function(){popup(payload)})}catch(e){popup(payload)}
 })();</code></pre>
 </body>
 </html>

@@ -89,6 +89,17 @@ export function _columnsFor(tabName) {
   return cols.slice();
 }
 
+// Resolve a tab's numeric sheetId (gid), needed for structural ops like deleteDimension.
+async function getSheetGid(sheets, tabName) {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: requireSheetId(),
+    fields: 'sheets(properties(sheetId,title))',
+  });
+  const sheet = (meta.data.sheets || []).find((s) => s.properties.title === tabName);
+  if (!sheet) throw new Error(`Tab not found: ${tabName}`);
+  return sheet.properties.sheetId;
+}
+
 function columnLetter(index) {
   let n = index;
   let letters = '';
@@ -189,6 +200,57 @@ export async function appendRows(tabName, rows) {
     return { appended: values.length, updates: res.data.updates };
   } catch (err) {
     throw new Error(`Failed to append ${tabName}: ${err.message}`);
+  }
+}
+
+// Physically remove the single row where key=keyValue (shifts rows up). Used to reject /
+// delete an Inbox job. Errors if zero or multiple rows match, to avoid clobbering the wrong one.
+export async function deleteRow(tabName, key, keyValue) {
+  const sheets = await getSheets();
+  const columns = _columnsFor(tabName);
+  const keyIdx = columns.indexOf(key);
+  if (keyIdx === -1) throw new Error(`Unknown column ${key} on tab ${tabName}`);
+
+  const lastCol = columnLetter(columns.length - 1);
+  let allValues;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: requireSheetId(),
+      range: `${quoteTab(tabName)}!A2:${lastCol}`,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING',
+    });
+    allValues = res.data.values || [];
+  } catch (err) {
+    throw new Error(`Failed to delete ${tabName}: ${err.message}`);
+  }
+
+  const matches = [];
+  for (let i = 0; i < allValues.length; i++) {
+    const cell = allValues[i][keyIdx];
+    if (cell !== undefined && String(cell) === String(keyValue)) matches.push(i);
+  }
+  if (matches.length === 0) throw new Error(`Failed to delete ${tabName}: no row matched ${key}=${keyValue}`);
+  if (matches.length > 1) throw new Error(`Failed to delete ${tabName}: multiple rows matched ${key}=${keyValue}`);
+
+  // allValues[0] is sheet row 2 (dimension index 1); header is dimension index 0.
+  const startIndex = matches[0] + 1;
+  const gid = await getSheetGid(sheets, tabName);
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: requireSheetId(),
+      requestBody: {
+        requests: [{
+          deleteDimension: {
+            range: { sheetId: gid, dimension: 'ROWS', startIndex, endIndex: startIndex + 1 },
+          },
+        }],
+      },
+    });
+    debug('deleteRow', tabName, key, keyValue, 'sheetRow', startIndex + 1);
+    return { deleted: 1 };
+  } catch (err) {
+    throw new Error(`Failed to delete ${tabName}: ${err.message}`);
   }
 }
 

@@ -258,6 +258,22 @@ a:hover { text-decoration: underline; }
 .btn-ghost:hover { border-color: var(--accent-line); background: var(--accent-soft); }
 .btn-ghost:disabled { opacity: 0.5; cursor: default; }
 
+/* Quiet "Delete" affordance - sits at the far right, only reddens on hover. */
+.btn-delete {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  margin-left: auto;
+  padding: 9px 6px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.btn-delete:hover { color: #a3392f; }
+.btn-delete:disabled { opacity: 0.5; cursor: default; }
+
 .spinner {
   display: inline-block;
   width: 14px; height: 14px;
