@@ -247,11 +247,15 @@ router.get('/api/cover-letter/:job_id', async (req, res, next) => {
   }
 });
 
-// Persona-only fallback: the canonical cover-letter paragraphs (2/3) + sign-off with an
-// editable placeholder opener (there is no job to tailor paragraph 1). Used by the header
-// "Open docs" dropdown. Tyler clicks "Enable editing", writes the opener, then Cmd+P.
-const CL_PLACEHOLDER_OPENER =
-  '[Opening paragraph - click "Enable editing" above, then write 2-3 sentences tailored to the role.]';
+// Persona-only canonical cover letters: Tyler's real opening paragraph + the canonical
+// follow-on paragraphs (2/3) + sign-off (there is no job to tailor against). Used by the
+// header "Canonical resumes" dropdown. Editable in-browser if a tweak is wanted.
+const CL_CANONICAL_OPENER = {
+  variant1:
+    "Hi there - I'm Tyler Geddes, a GTM and Revenue Enablement leader with over 8 years of experience driving the metrics that matter for customer-facing teams. I don't just use AI on a daily basis - I enable AI adoption for the teams I support, and build functional apps, workflows, and systems for them to use. I've created revenue-linked enablement programs for Sales and Customer Success teams at B2B SaaS companies in several different industries - helping them adapt faster with training that costs less to produce, and changes how reps actually work.",
+  variant2:
+    "Hi there - I'm Tyler Geddes, a customer education leader and AI-native training professional. I build real, functional systems and workflows with AI, and have learned how impactful it is when used for more than just low-effort content generation. For 8+ years I've turned onboarding into a retention strategy - replacing unsustainable 1:1 training with scalable 1:many systems that cut time-to-value and reduce churn. I create the AI infrastructure that supports customer education myself, speeding instructional development cycles without waiting for expensive tools to be procured.",
+};
 
 router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
   try {
@@ -266,7 +270,7 @@ router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
       title: '',
       name,
       contactHtml,
-      generatedFirstParagraph: CL_PLACEHOLDER_OPENER,
+      generatedFirstParagraph: CL_CANONICAL_OPENER[variant] || CL_CANONICAL_OPENER.variant1,
       tailParagraphs,
       signOffHtml,
     });

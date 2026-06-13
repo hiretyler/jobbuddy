@@ -369,7 +369,11 @@ function init() {
   $('#discover-form').addEventListener('submit', onDiscover);
   setupMenu();
 
-  window.addEventListener('focus', loadInbox);
+  window.addEventListener('focus', () => {
+    // Don't rebuild cards (and blow away an in-progress prep/apply panel) on refocus.
+    if (document.querySelector('.prep') || document.querySelector('.spinner')) return;
+    loadInbox();
+  });
   if (typeof BroadcastChannel === 'function') {
     const bc = new BroadcastChannel('jobbuddy');
     bc.addEventListener('message', (ev) => {
