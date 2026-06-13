@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+logs/
+applications/
+*.log
+.DS_Store
+tokens/
+secrets/
+sessions/
+# bespoke-application skill prompt files
+cache/bespoke-prompts/*.md
+# local-only Claude Code settings
+.claude/settings.local.json

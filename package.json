@@ -1,0 +1,20 @@
+{
+  "name": "jobbuddy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "node --watch server/index.js",
+    "start": "node server/index.js",
+    "bootstrap-sheet": "node scripts/bootstrap-sheet.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "googleapis": "^144.0.0",
+    "google-auth-library": "^9.14.0",
+    "dotenv": "^16.4.5",
+    "jsdom": "^25.0.0"
+  },
+  "engines": { "node": ">=20" }
+}
