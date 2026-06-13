@@ -2,6 +2,10 @@
 
 const PERSONA_NAME = { variant1: 'Enablement & L&D', variant2: 'Customer Education' };
 
+// Jobs deleted this session. A focus-triggered reload can race ahead of the sheet's
+// read-after-write lag and resurrect a just-deleted card; filter those out until reload.
+const deletedIds = new Set();
+
 // ---- tiny DOM helpers --------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
 function el(tag, attrs = {}, kids = []) {
@@ -45,8 +49,11 @@ function toast(lines) {
 function showView(name) {
   $('#view-inbox').hidden = name !== 'inbox';
   $('#view-discover').hidden = name !== 'discover';
+  $('#view-setup').hidden = name !== 'setup';
+  $('.capture').hidden = name !== 'inbox';
   $('#tab-inbox').classList.toggle('is-active', name === 'inbox');
   $('#tab-discover').classList.toggle('is-active', name === 'discover');
+  $('#tab-setup').classList.toggle('is-active', name === 'setup');
 }
 
 // ---- INBOX -------------------------------------------------------------------
@@ -82,7 +89,21 @@ function renderJobCard(job) {
     scoreBox(PERSONA_NAME.variant2, job.variant2_score, rec === 'variant2'),
   ]));
 
-  if (job.status === 'applied') return card;
+  if (job.status === 'applied') {
+    const appliedActions = el('div', { class: 'card-actions' });
+    const folderBtn = el('button', { class: 'btn-ghost', type: 'button', text: 'Open folder' });
+    folderBtn.addEventListener('click', () => openFolder(job, folderBtn));
+    appliedActions.append(folderBtn);
+    card.append(appliedActions);
+    return card;
+  }
+
+  // Already prepped: render the saved panel directly (the cover-letter paragraph, mention
+  // bullets, and persona live in the sheet, so no need to regenerate on every reload).
+  if (job.has_cl && job.has_bullets) {
+    renderPrepPanel(job, card, job.recommended_persona || 'variant1');
+    return card;
+  }
 
   const actions = el('div', { class: 'card-actions' });
   const prepBtn = el('button', { class: 'btn-primary', type: 'button', text: 'Prep to apply' });
@@ -105,6 +126,7 @@ async function deleteJob(job, card, btn) {
   btn.textContent = 'Deleting…';
   const data = await api(`/api/inbox/${encodeURIComponent(job.job_id)}`, { method: 'DELETE' });
   if (data.ok) {
+    deletedIds.add(job.job_id);
     card.remove();
     toast(`Deleted: ${label}`);
     $('#inbox-empty').hidden = $('#inbox-list').children.length > 0 || $('#applied-list').children.length > 0;
@@ -184,9 +206,24 @@ function renderPrepPanel(job, card, persona) {
     prepToApply(job, card, b, other);
   });
   toggle.append(swap);
+
+  const delBtn = el('button', { class: 'btn-delete', type: 'button', text: 'Delete' });
+  delBtn.addEventListener('click', () => deleteJob(job, card, delBtn));
+  toggle.append(delBtn);
+
   prep.append(toggle);
 
   card.append(prep);
+}
+
+async function openFolder(job, btn) {
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = 'Opening…';
+  const data = await api(`/api/open-folder/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
+  btn.disabled = false;
+  btn.textContent = prev;
+  if (!data.ok) toast(data.error || 'Could not open the archive folder.');
 }
 
 async function markApplied(job, card, btn) {
@@ -194,7 +231,9 @@ async function markApplied(job, card, btn) {
   btn.innerHTML = '<span class="spinner"></span>Saving…';
   const data = await api(`/api/applied/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
   if (data.ok) {
-    toast(`Marked applied: ${job.company || job.title || 'job'}`);
+    const lines = [`Marked applied: ${job.company || job.title || 'job'}`];
+    if (data.archived) lines.push('JD + notes saved to your archive folder.');
+    toast(lines);
     loadInbox();
   } else {
     btn.disabled = false;
@@ -205,7 +244,7 @@ async function markApplied(job, card, btn) {
 
 async function loadInbox() {
   const data = await api('/api/inbox');
-  const jobs = data.jobs || [];
+  const jobs = (data.jobs || []).filter((j) => !deletedIds.has(j.job_id));
   const active = jobs.filter((j) => j.status !== 'applied');
   const applied = jobs.filter((j) => j.status === 'applied');
 
@@ -382,14 +421,29 @@ function setupMenu() {
   });
 }
 
+// Pull the current bookmarklet href off the install page so the Setup tab's draggable
+// link always matches what gen-bookmarklet.mjs last produced (single source of truth).
+async function loadSetupBookmarklet() {
+  const link = $('#setup-bookmarklet');
+  if (!link) return;
+  try {
+    const res = await fetch('/bookmarklet/install');
+    const html = await res.text();
+    const m = html.match(/href="(javascript:[^"]*)"/);
+    if (m) link.setAttribute('href', m[1].replace(/&amp;/g, '&'));
+  } catch (_e) { /* leave the fallback href to the install page */ }
+}
+
 // ---- boot --------------------------------------------------------------------
 function init() {
   $('#tab-inbox').addEventListener('click', () => showView('inbox'));
   $('#tab-discover').addEventListener('click', () => showView('discover'));
+  $('#tab-setup').addEventListener('click', () => showView('setup'));
   $('#scan-btn').addEventListener('click', onScan);
   $('#capture-form').addEventListener('submit', onCapture);
   $('#discover-form').addEventListener('submit', onDiscover);
   setupMenu();
+  loadSetupBookmarklet();
 
   window.addEventListener('focus', () => {
     // Don't rebuild cards (and blow away an in-progress prep/apply panel) on refocus.

@@ -26,6 +26,7 @@ import {
 } from '../claude/subprocess.js';
 import { fetchJdBody, isAuthWalled } from '../jd-prefetch.js';
 import { ingestUrl } from '../manual.js';
+import { archiveConfigured, writeApplicationArchive, applicationDir, openInFinder } from '../archive.js';
 
 const router = Router();
 
@@ -461,9 +462,35 @@ router.post('/api/applied/:job_id', async (req, res, next) => {
       job_id,
     };
     await appendRows('Applications', [appRow]);
-    await updateRow('Inbox', 'job_id', job_id, { status: 'applied', applied_at: nowIso() });
+    const appliedAt = nowIso();
+    await updateRow('Inbox', 'job_id', job_id, { status: 'applied', applied_at: appliedAt });
 
-    res.json({ ok: true });
+    // Drop the JD + notes into the dated career-archive folder for this application.
+    let archived = null;
+    if (archiveConfigured()) {
+      const result = await writeApplicationArchive({ ...row, status: 'applied', applied_at: appliedAt });
+      if (result.ok) archived = result.dir;
+      else process.stderr.write(`[applied] archive write failed job=${job_id}: ${result.error || result.reason}\n`);
+    }
+
+    res.json({ ok: true, archived });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- POST /api/open-folder/:job_id (reveal this application's archive folder) ---
+router.post('/api/open-folder/:job_id', async (req, res, next) => {
+  try {
+    if (!archiveConfigured()) {
+      return res.status(400).json({ ok: false, error: 'archive folder not configured (set ARCHIVE_DIR in .env)' });
+    }
+    const { job_id } = req.params;
+    const row = await findRow('Inbox', 'job_id', job_id);
+    if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
+    const dir = applicationDir(row);
+    const opened = await openInFinder(dir);
+    res.json({ ok: opened, dir });
   } catch (err) {
     next(err);
   }

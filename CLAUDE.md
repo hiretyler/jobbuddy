@@ -41,8 +41,18 @@ from Gmail on demand.
 - Credentials reused from applysprint: same Google service account (`secrets/service-account.json`,
   email `applysprint-sheets@applysprint-496714.iam.gserviceaccount.com`) and the same authorized
   Gmail OAuth token (`tokens/gmail.json`) - no re-auth needed. `.env` has the keys.
-- Routes: pipeline.js (capture/score/apply/applied/inbox), resume/cover-letter/persona/ats-swap
-  (prep), status.js (gmail oauth + /api/scan-inbox), discover.js (on-demand sources).
+- Routes: pipeline.js (capture/score/apply/applied/inbox + DELETE /api/inbox/:id + open-folder),
+  resume/cover-letter/persona/ats-swap (prep), status.js (gmail oauth + /api/scan-inbox),
+  discover.js (on-demand sources).
+- Career archive (`server/archive.js`): on Mark applied, writes the JD + a notes file into
+  `$ARCHIVE_DIR/<YYYY-MM-DD>/<Company> - <Role>/` (user drops resume/CL PDFs there). Pull, not
+  push - only on apply, never background. `ARCHIVE_DIR` in `.env`; unset = silently skipped.
+  Open-folder button shells out to macOS `open`, path always recomputed from job_id (never
+  client-supplied). No server-side PDF rendering (user prints via Cmd+P).
+- The bookmarklet (`web/bookmarklet/install.html`) is GENERATED from `scripts/gen-bookmarklet.mjs`
+  (single source for the draggable href + the readable source - they used to drift). Edit the
+  script, run `node scripts/gen-bookmarklet.mjs`, restart, re-drag. The Setup tab pulls the live
+  href off the install page so it always matches.
 
 ## Gotchas / lessons
 

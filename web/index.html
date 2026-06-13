@@ -14,6 +14,7 @@
         <button id="tab-inbox" class="navbtn is-active" type="button">Inbox</button>
         <button id="tab-discover" class="navbtn" type="button">Discover</button>
         <button id="scan-btn" class="navbtn" type="button">Scan inbox</button>
+        <button id="tab-setup" class="navbtn" type="button">Setup</button>
         <a class="navbtn" href="https://docs.google.com/spreadsheets/d/1DKR4dAEnb_WddMlw_xGucqwG6nt6_l83Vt5SdTWh_BI" target="_blank" rel="noopener">Open tracker</a>
         <div class="menu">
           <button id="resumes-btn" class="navbtn" type="button" aria-haspopup="true" aria-expanded="false">Canonical resumes</button>
@@ -64,6 +65,35 @@
       </form>
       <div id="discover-status" class="note" hidden></div>
       <div id="discover-list" class="stack"></div>
+    </section>
+
+    <!-- SETUP -->
+    <section id="view-setup" class="view setup" hidden>
+      <div class="setup-card">
+        <h2 class="section-head">The bookmarklet</h2>
+        <p class="setup-p">Drag this to your bookmarks bar. On any job posting, click it to grab the JD and send it to your Inbox, scored. It reads same-origin embeds (iCIMS) and hands cross-origin board iframes (Greenhouse, Lever) to JobBuddy to fetch.</p>
+        <p><a class="bookmarklet" id="setup-bookmarklet" href="/bookmarklet/install">Grab JD &rarr; JobBuddy</a></p>
+        <p class="setup-note">Updated the grabber? It regenerates from <code>scripts/gen-bookmarklet.mjs</code>. Re-pull this page (or open <a href="/bookmarklet/install" target="_blank" rel="noopener">the install page</a>) and re-drag the bookmark to replace the old one.</p>
+      </div>
+
+      <div class="setup-card">
+        <h2 class="section-head">Relaunch from a fresh clone</h2>
+        <p class="setup-p">If you ever start over from a GitHub download, the repo does <strong>not</strong> include secrets. You need <code>.env</code>, <code>secrets/service-account.json</code>, and <code>tokens/gmail.json</code> (reused from applysprint) before it will run.</p>
+        <ol class="setup-steps">
+          <li><strong>Install deps:</strong> <code>npm install</code></li>
+          <li><strong>Restore config:</strong> drop in <code>.env</code> (keys: <code>GOOGLE_SHEET_ID</code>, the <code>GMAIL_OAUTH_*</code> set, <code>GMAIL_TOKEN_PATH</code>, <code>CLAUDE_BIN</code>, <code>CLAUDE_MODEL</code>, <code>ARCHIVE_DIR</code>, <code>PORT</code>), plus <code>secrets/service-account.json</code> and <code>tokens/gmail.json</code>.</li>
+          <li><strong>Check the <code>claude</code> CLI</strong> is installed and logged in (all model work runs through it - no API key).</li>
+          <li><strong>Repair the sheet headers</strong> (optional): <code>npm run bootstrap-sheet</code></li>
+          <li><strong>Run it.</strong> Quick foreground: <code>npm start</code>. Always-on (launchd KeepAlive):
+            <pre class="setup-pre"><code>cp launchd/com.hiretyler.jobbuddy.dashboard.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hiretyler.jobbuddy.dashboard.plist</code></pre>
+          </li>
+          <li><strong>Open</strong> <a href="http://localhost:3000" target="_blank" rel="noopener">http://localhost:3000</a> and re-drag the bookmarklet above.</li>
+        </ol>
+        <p class="setup-note">After any server or prompt change, restart with:</p>
+        <pre class="setup-pre"><code>launchctl kickstart -k gui/$(id -u)/com.hiretyler.jobbuddy.dashboard</code></pre>
+        <p class="setup-note">The plist hardcodes the node path (<code>/opt/homebrew/bin/node</code>) and the repo path. If either differs on a fresh machine, edit <code>launchd/com.hiretyler.jobbuddy.dashboard.plist</code> before loading it. Static <code>web/</code> assets serve fresh on a hard refresh; only server/prompt changes need the restart.</p>
+      </div>
     </section>
   </main>
 
