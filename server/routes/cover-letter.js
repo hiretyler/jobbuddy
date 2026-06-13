@@ -1,0 +1,281 @@
+import { Router } from 'express';
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
+import { findRow } from '../sheets.js';
+
+const router = Router();
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PERSONAS_DIR = join(__dirname, '..', '..', 'assets', 'personas');
+
+const VARIANT_FILES = {
+  variant1: 'variant1_gtm_enablement.html',
+  variant2: 'variant2_customer_education.html',
+};
+
+function extractClParagraph(raw) {
+  if (!raw) return '';
+  const fenced = String(raw).match(/```json\s*\n([\s\S]*?)\n```/);
+  const candidate = fenced ? fenced[1] : String(raw);
+  try {
+    const obj = JSON.parse(candidate);
+    if (obj && typeof obj.cl_paragraph === 'string') return obj.cl_paragraph.trim();
+  } catch {}
+  if (!String(raw).includes('```') && !String(raw).trim().startsWith('{')) return String(raw).trim();
+  return '';
+}
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatDate(d = new Date()) {
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function extractFromPersona(personaHtml) {
+  const doc = new JSDOM(personaHtml).window.document;
+  const header = doc.querySelector('.resume-container > header');
+  const name = (header && header.querySelector('h1') && header.querySelector('h1').textContent.trim()) || 'Tyler Geddes';
+  const contactEl = header && header.querySelector('.contact-info');
+  const contactHtml = contactEl ? contactEl.innerHTML : '';
+
+  const bodyEl = doc.querySelector('.page > .body');
+  const tailParagraphs = [];
+  if (bodyEl) {
+    const ps = Array.from(bodyEl.querySelectorAll('p'));
+    for (let i = 1; i < ps.length; i++) tailParagraphs.push(ps[i].textContent.trim());
+  }
+
+  const signOffEl = doc.querySelector('.page > .sign-off');
+  const signOffHtml = signOffEl ? signOffEl.innerHTML : '';
+
+  return { name, contactHtml, tailParagraphs, signOffHtml };
+}
+
+function renderCoverLetter({ company, title, name, contactHtml, generatedFirstParagraph, tailParagraphs, signOffHtml }) {
+  const dateStr = formatDate();
+  const paragraphs = [generatedFirstParagraph, ...tailParagraphs]
+    .filter(Boolean)
+    .map((p) => `<p>${esc(p)}</p>`)
+    .join('\n');
+
+  const recipient = company
+    ? `<div class="recipient"><strong>${esc(company)}</strong>${title ? ` — ${esc(title)}` : ''}</div>`
+    : '';
+
+  const readOnlyText = `Read-only${company ? ' - ' + company : ''}. Cmd+P to print.`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cover Letter - ${esc(name)}${company ? ` - ${esc(company)}` : ''}${title ? ` - ${esc(title)}` : ''}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f0f0f0; padding: 10px 20px; color: #111; font-size: 11pt; line-height: 1.4; }
+  .page { max-width: 8.5in; margin: 0 auto; background: #fff; padding: 0.25in 0.75in 0.75in 0.75in; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  .letter-header { margin-bottom: 22px; }
+  .letter-header h1 { font-size: 18pt; font-weight: 600; margin-bottom: 4px; }
+  .contact-info { font-size: 10pt; color: #333; margin-bottom: 18px; }
+  .contact-info a { color: inherit; text-decoration: none; }
+  .date { font-size: 10pt; margin-bottom: 14px; }
+  .recipient { font-size: 11pt; margin-bottom: 18px; }
+  .body p { margin-bottom: 14px; }
+  .sign-off { margin-top: 22px; }
+  .sign-off p { margin-bottom: 4px; font-size: 11pt; }
+  .sign-off a { color: inherit; text-decoration: none; }
+
+  .applysprint-banner {
+    position: fixed; top: 16px; left: 16px;
+    background: #ecfeff; border: 1px solid #0e7490; color: #155e75;
+    padding: 6px 10px; border-radius: 4px; font: 12px/1.3 -apple-system, system-ui, sans-serif;
+    z-index: 9999; display: flex; align-items: center; gap: 10px;
+  }
+  .banner-btn {
+    font-size: 11px; padding: 3px 8px; border: 1px solid #0e7490;
+    background: #fff; color: #0e7490; border-radius: 3px; cursor: pointer;
+  }
+  .banner-btn:hover { background: #ecfeff; }
+  .page[contenteditable="true"]:focus { outline: 2px solid #0e7490; outline-offset: 4px; }
+
+  .applysprint-dialog {
+    border: 1px solid #9ca3af; border-radius: 6px; padding: 0; max-width: 420px;
+    font: 13px/1.45 -apple-system, system-ui, sans-serif; color: #111;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  }
+  .applysprint-dialog::backdrop { background: rgba(0,0,0,0.35); }
+  .applysprint-dialog .dlg-inner { padding: 16px 18px 14px; }
+  .applysprint-dialog h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  .applysprint-dialog p { font-size: 13px; margin: 0 0 14px; color: #374151; }
+  .applysprint-dialog .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .applysprint-dialog button {
+    font-size: 12px; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+    border: 1px solid #9ca3af; background: #fff; color: #111;
+  }
+  .applysprint-dialog button.primary {
+    border-color: #0e7490; background: #0e7490; color: #fff;
+  }
+  .applysprint-dialog button:hover { background: #f3f4f6; }
+  .applysprint-dialog button.primary:hover { background: #0c6680; }
+
+  @media print {
+    @page { size: 8.5in 11in; margin: 0; }
+    body { background: white; padding: 0; margin: 0; }
+    .page { box-shadow: none; max-width: none; width: 100%; padding: 0.5in 0.75in; }
+    .applysprint-banner { display: none !important; }
+    .applysprint-dialog { display: none !important; }
+    .banner-btn { display: none !important; }
+    .page[contenteditable="true"]:focus { outline: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="applysprint-banner" data-mode="readonly"><span class="banner-text">${esc(readOnlyText)}</span> <button type="button" class="banner-btn banner-enable">Enable editing</button><button type="button" class="banner-btn banner-revert" hidden>Revert</button></div>
+<dialog class="applysprint-dialog" id="edit-confirm">
+  <div class="dlg-inner">
+    <h2>Editing breaks momentum</h2>
+    <p>Each in-browser edit pulls time away from your apply target. If the canonical cover-letter paragraphs aren't a fit, you're likely customizing a long-shot. Recommended: ship the canonical and move on.</p>
+    <div class="dlg-actions">
+      <button type="button" class="dlg-cancel" autofocus>Cancel</button>
+      <button type="button" class="dlg-confirm primary">Edit anyway</button>
+    </div>
+  </div>
+</dialog>
+<div class="page" contenteditable="false" spellcheck="true">
+  <div class="letter-header">
+    <div class="date">${esc(dateStr)}</div>
+    ${recipient}
+  </div>
+  <div class="body">
+${paragraphs}
+  </div>
+  <div class="sign-off">${signOffHtml}</div>
+</div>
+<script>
+(function () {
+  var page = document.querySelector('.page');
+  var banner = document.querySelector('.applysprint-banner');
+  var bannerText = banner.querySelector('.banner-text');
+  var enableBtn = banner.querySelector('.banner-enable');
+  var revertBtn = banner.querySelector('.banner-revert');
+  var dialog = document.querySelector('#edit-confirm');
+  var cancelBtn = dialog.querySelector('.dlg-cancel');
+  var confirmBtn = dialog.querySelector('.dlg-confirm');
+  var readOnlyText = ${JSON.stringify(readOnlyText)};
+  var editingText = readOnlyText.replace(/^Read-only/, 'Editing enabled');
+
+  function setReadOnly() {
+    page.setAttribute('contenteditable', 'false');
+    banner.setAttribute('data-mode', 'readonly');
+    bannerText.textContent = readOnlyText;
+    enableBtn.hidden = false;
+    revertBtn.hidden = true;
+  }
+
+  function setEditable() {
+    page.setAttribute('contenteditable', 'true');
+    banner.setAttribute('data-mode', 'editing');
+    bannerText.textContent = editingText;
+    enableBtn.hidden = true;
+    revertBtn.hidden = false;
+  }
+
+  enableBtn.addEventListener('click', function () {
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      // Fallback for browsers without <dialog> support
+      if (window.confirm('Editing breaks momentum. Edit anyway?')) setEditable();
+    }
+  });
+
+  cancelBtn.addEventListener('click', function () {
+    dialog.close('cancel');
+  });
+
+  confirmBtn.addEventListener('click', function () {
+    setEditable();
+    dialog.close('confirm');
+  });
+
+  revertBtn.addEventListener('click', function () {
+    if (window.confirm('Discard your edits and reload the canonical cover letter?')) {
+      location.reload();
+    }
+  });
+})();
+</script>
+</body>
+</html>
+`;
+}
+
+router.get('/api/cover-letter/:job_id', async (req, res, next) => {
+  try {
+    const { job_id } = req.params;
+    const job = await findRow('Inbox', 'job_id', job_id);
+    if (!job) return res.status(404).send(`job not found: ${job_id}`);
+
+    const variant = job.recommended_persona || 'variant1';
+    const filename = VARIANT_FILES[variant] || VARIANT_FILES.variant1;
+    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const { name, contactHtml, tailParagraphs, signOffHtml } = extractFromPersona(personaHtml);
+
+    const generatedFirstParagraph = extractClParagraph(job.cl_paragraph);
+    if (!generatedFirstParagraph) {
+      return res.status(400).send('No generated cover-letter paragraph yet. Click Apply first.');
+    }
+
+    const html = renderCoverLetter({
+      company: job.company,
+      title: job.title,
+      name,
+      contactHtml,
+      generatedFirstParagraph,
+      tailParagraphs,
+      signOffHtml,
+    });
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Persona-only fallback: the canonical cover-letter paragraphs (2/3) + sign-off with an
+// editable placeholder opener (there is no job to tailor paragraph 1). Used by the header
+// "Open docs" dropdown. Tyler clicks "Enable editing", writes the opener, then Cmd+P.
+const CL_PLACEHOLDER_OPENER =
+  '[Opening paragraph - click "Enable editing" above, then write 2-3 sentences tailored to the role.]';
+
+router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
+  try {
+    const { variant } = req.params;
+    const filename = VARIANT_FILES[variant];
+    if (!filename) return res.status(404).send(`unknown persona: ${variant}`);
+    const personaHtml = await readFile(join(PERSONAS_DIR, filename), 'utf8');
+    const { name, contactHtml, tailParagraphs, signOffHtml } = extractFromPersona(personaHtml);
+
+    const html = renderCoverLetter({
+      company: '',
+      title: '',
+      name,
+      contactHtml,
+      generatedFirstParagraph: CL_PLACEHOLDER_OPENER,
+      tailParagraphs,
+      signOffHtml,
+    });
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JobBuddy - capturing JD</title>
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 2em; color: #222; }
+  .ok { color: #0a7d27; }
+  .err { color: #b00020; }
+  pre { background: #f4f4f4; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="status">Capturing...</div>
+<pre id="detail" hidden></pre>
+<script>
+(function(){
+  var statusEl = document.getElementById('status');
+  var detailEl = document.getElementById('detail');
+
+  function show(msg, cls, detail){
+    statusEl.textContent = msg;
+    statusEl.className = cls || '';
+    if (detail){ detailEl.hidden = false; detailEl.textContent = detail }
+  }
+
+  var hash = location.hash.slice(1);
+  if (!hash){ show('No payload in URL hash.', 'err'); return }
+
+  var payload;
+  try {
+    var json = decodeURIComponent(escape(atob(hash)));
+    payload = JSON.parse(json);
+  } catch(e){
+    show('Failed to decode payload.', 'err', String(e));
+    return;
+  }
+
+  fetch('http://localhost:3000/jd-capture', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (!r.ok) return r.text().then(function(t){ throw new Error(r.status + ': ' + t) });
+    return r.json().catch(function(){ return {} });
+  }).then(function(data){
+    show('Saved to JobBuddy', 'ok');
+    try {
+      if (typeof BroadcastChannel === 'function') {
+        var bc = new BroadcastChannel('jobbuddy');
+        bc.postMessage({ type: 'jd-captured', job_id: data && data.job_id, url: payload && payload.url });
+        bc.close();
+      }
+    } catch (_e) {}
+    setTimeout(function(){ window.close() }, 1500);
+  }).catch(function(e){
+    show('Save failed - window left open for retry.', 'err', String(e && e.message || e));
+  });
+})();
+</script>
+</body>
+</html>
