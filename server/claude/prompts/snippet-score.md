@@ -112,6 +112,14 @@ Identify the hiring company - the organization that would actually employ this p
 - NEVER return a job board (LinkedIn, BuiltIn, Indeed, Otta, Wellfound, Glassdoor, ZipRecruiter), an ATS vendor (Greenhouse, Lever, iCIMS, Workday, Ashby, Eightfold), or a region/location token (e.g. "AMER", "EMEA", "US-Nationwide", "Nationwide", "Remote", "US").
 - Prefer the clean brand name ("Quest", "Toast"), not a legal suffix or marketing tagline.
 
+## Job title
+
+Put the posted job title in the `role` field, cleaned up.
+
+- The `Role:` input above is the captured title. If it looks like the real posted title, just clean it: strip any trailing company name, location, or job-board suffix (e.g. "AI Enablement & Adoption Manager | Nimble Gravity | LinkedIn" -> "AI Enablement & Adoption Manager"; "Program Manager - Product & Technology Team in Nationwide | Careers at AMER" -> "Program Manager - Product & Technology Team").
+- If the captured Role is junk (e.g. "Application", "Apply", a URL fragment, or just a company name), derive the actual title from the snippet body instead.
+- Do not invent or paraphrase - prefer the exact posted wording. Return an empty string only if no title can be determined.
+
 ## Output
 
 Pick the top persona (highest score; ties broken by which persona has the cleaner trigger-phrase match in the snippet, not by score-rounding).
@@ -119,5 +127,5 @@ Pick the top persona (highest score; ties broken by which persona has the cleane
 Return ONLY a single fenced JSON block with this exact shape. No prose before or after.
 
 ```json
-{"company":"","variant1":{"score":0,"reason":""},"variant2":{"score":0,"reason":""},"top":{"persona":"variant1","score":0,"reason":""}}
+{"company":"","role":"","variant1":{"score":0,"reason":""},"variant2":{"score":0,"reason":""},"top":{"persona":"variant1","score":0,"reason":""}}
 ```

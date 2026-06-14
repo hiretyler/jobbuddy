@@ -103,6 +103,17 @@ function cleanCompany(name) {
   return n.slice(0, 80);
 }
 
+// Clean a captured job title: drop "| Company | Source" suffixes and reject junk titles
+// (page-title cruft like "Application"). Returns '' when the title is unusable.
+function cleanTitle(raw) {
+  let t = String(raw || '').replace(/\s+/g, ' ').trim();
+  t = t.split(' | ')[0].trim(); // strip a trailing "| Company | LinkedIn"-style suffix
+  t = t.replace(/\s*[-|–]\s*careers\b.*$/i, '').trim();
+  if (t.length < 2) return '';
+  if (/^(application|apply|apply now|careers?|job|jobs|untitled|home)$/i.test(t)) return '';
+  return t.slice(0, 120);
+}
+
 // Derive a best-effort company name from title ("Role at Company"), then URL host, then body.
 // This is only the initial guess; scoreRow replaces it with the JD-extracted name when scoring.
 function deriveCompany({ title, url, body }) {
@@ -167,12 +178,15 @@ async function scoreRow(row) {
   const scoreObj = await scoreSnippet(asScoringRole(row));
   const scores = parseScores(scoreObj);
   const update = { ...scores, status: 'scored' };
-  // The model reads the JD and names the actual employer - more reliable than the
-  // title/host guess. Use it when present (fixes "Builtin"->Toast, "AMER"->Quest).
+  // The model reads the JD and names the actual employer + posted title - more reliable
+  // than the title/host guess. Use them when present (fixes "Builtin"->Toast, "AMER"->Quest,
+  // "Application"->"Senior Program Manager, Content Operations & Learning Technology").
   const extracted = cleanCompany(scoreObj?.company);
   if (extracted) update.company = extracted;
+  const role = cleanTitle(scoreObj?.role) || cleanTitle(row.title);
+  if (role) update.title = role;
   await updateRow('Inbox', 'job_id', row.job_id, update);
-  return { ...scores, company: extracted || row.company };
+  return { ...scores, company: extracted || row.company, title: role || row.title };
 }
 
 // --- POST /jd-capture (bookmarklet / desktop) ----------------------------------
