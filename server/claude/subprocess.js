@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || '/opt/homebrew/bin/claude';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
@@ -127,18 +126,6 @@ export async function rescoreFullJd(role, jdBody) {
   return runClaudeJson(prompt);
 }
 
-export async function generateClIntro(role, persona, masterBankRelevant) {
-  const tpl = await loadPromptTemplate('cl-intro');
-  const prompt = fillTemplate(tpl, {
-    company: role.company || '',
-    role: role.role || '',
-    persona: persona || '',
-    jd_body: role.jd_body || '',
-    master_bank_relevant: masterBankRelevant || '',
-  });
-  return runClaude(prompt);
-}
-
 // Ambiguous-rejection classifier. Used only when the cheap phrase heuristic is
 // inconclusive, to keep CLI volume/cost down. emails is a preformatted string of
 // "Subject: ...\nSnippet: ..." blocks. Returns {rejected, confidence}.
@@ -148,39 +135,3 @@ export async function classifyRejectionWithClaude(company, emails) {
   return runClaudeJson(prompt);
 }
 
-const VARIANT_FILES = {
-  variant1: 'variant1_gtm_enablement.html',
-  variant2: 'variant2_customer_education.html',
-};
-
-async function loadOtherPersonaBullets(recommended) {
-  const others = Object.keys(VARIANT_FILES).filter((v) => v !== recommended);
-  const out = [];
-  for (const variant of others) {
-    try {
-      const fileUrl = new URL(`../../assets/personas/${VARIANT_FILES[variant]}`, import.meta.url);
-      const html = await readFile(fileUrl, 'utf8');
-      const doc = new JSDOM(html).window.document;
-      const bullets = Array.from(doc.querySelectorAll('ul.achievements li'))
-        .map((li) => li.textContent.replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
-      for (const b of bullets) out.push(`[${variant}] ${b}`);
-    } catch {}
-  }
-  return Array.from(new Set(out));
-}
-
-export async function generateMentionBullets(role, persona, masterBankFullText) {
-  const tpl = await loadPromptTemplate('mention-bullets');
-  const recommended = persona || role.recommended_persona || 'variant1';
-  const otherBullets = await loadOtherPersonaBullets(recommended);
-  const prompt = fillTemplate(tpl, {
-    company: role.company || '',
-    role: role.role || '',
-    recommended_persona: recommended,
-    jd_body: role.jd_body || '',
-    master_bank: masterBankFullText || '',
-    other_persona_bullets: otherBullets.join('\n'),
-  });
-  return runClaude(prompt);
-}

@@ -13,17 +13,11 @@
 //   POST   /api/apply/:job_id   full-JD rescore + generate CL para + mention bullets
 //   POST   /api/applied/:job_id promote: write a clean Applications row (idempotent)
 
-import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { readTab, findRow, appendRows, updateRow, deleteRow } from '../sheets.js';
 import { canonicalIdentity } from '../identity.js';
-import {
-  scoreSnippet,
-  rescoreFullJd,
-  generateClIntro,
-  generateMentionBullets,
-} from '../claude/subprocess.js';
+import { scoreSnippet, rescoreFullJd } from '../claude/subprocess.js';
 import { fetchJdBody, isAuthWalled } from '../jd-prefetch.js';
 import { ingestUrl } from '../manual.js';
 import { archiveConfigured, writeApplicationArchive, applicationDir, openInFinder } from '../archive.js';
@@ -32,23 +26,6 @@ const router = Router();
 
 const MIN_BODY_CHARS = 300;
 const SNIPPET_CAP = 1500;
-
-// Real bank is local-only (secrets/); fall back to the tracked schema example on a fresh clone.
-const MASTER_BANK_SOURCES = [
-  process.env.MASTER_BANK_PATH,
-  new URL('../../secrets/master-bank.json', import.meta.url),
-  new URL('../../assets/master-bank.example.json', import.meta.url),
-].filter(Boolean);
-let masterBankCache = null;
-async function loadMasterBank() {
-  if (masterBankCache !== null) return masterBankCache;
-  for (const src of MASTER_BANK_SOURCES) {
-    try { masterBankCache = await readFile(src, 'utf8'); return masterBankCache; }
-    catch { /* try next source */ }
-  }
-  masterBankCache = '';
-  return masterBankCache;
-}
 
 // --- CORS (bookmarklet posts cross-origin) -------------------------------------
 function cors(req, res, next) {
@@ -349,7 +326,7 @@ router.post('/api/ingest', cors, async (req, res, next) => {
 router.get('/api/inbox', async (_req, res, next) => {
   try {
     const rows = await readTab('Inbox');
-    const SHOW = new Set(['new', 'scored', 'applied']);
+    const SHOW = new Set(['new', 'scored', 'prepped', 'applied']);
     const jobs = rows
       .filter((r) => SHOW.has(r.status))
       .map((r) => ({
@@ -362,8 +339,6 @@ router.get('/api/inbox', async (_req, res, next) => {
         variant1_score: r.variant1_score === '' ? null : Number(r.variant1_score),
         variant2_score: r.variant2_score === '' ? null : Number(r.variant2_score),
         recommended_persona: r.recommended_persona,
-        has_cl: !!String(r.cl_paragraph || '').trim(),
-        has_bullets: !!String(r.mention_bullets || '').trim(),
         captured_at: r.captured_at,
       }))
       .sort((a, b) => String(b.captured_at).localeCompare(String(a.captured_at)));
@@ -407,30 +382,11 @@ router.post('/api/score/:job_id', async (req, res, next) => {
   }
 });
 
-// --- POST /api/apply/:job_id (prep: full-JD rescore + CL + bullets) -------------
-function extractJsonBlock(raw) {
-  if (!raw) return null;
-  const fenced = String(raw).match(/```json\s*\n([\s\S]*?)\n```/);
-  const candidate = fenced ? fenced[1] : String(raw);
-  try { return JSON.parse(candidate); } catch { return null; }
-}
-
-function extractClParagraph(raw) {
-  const obj = extractJsonBlock(raw);
-  if (obj && typeof obj.cl_paragraph === 'string') return obj.cl_paragraph.trim();
-  if (typeof raw === 'string' && !raw.includes('```') && !raw.trim().startsWith('{')) return raw.trim();
-  return '';
-}
-
-function parseBullets(raw) {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.filter((x) => typeof x === 'string' && x.trim());
-  const obj = extractJsonBlock(raw);
-  if (obj && Array.isArray(obj.bullets)) return obj.bullets;
-  if (Array.isArray(obj)) return obj.filter((x) => typeof x === 'string' && x.trim());
-  return [];
-}
-
+// --- POST /api/apply/:job_id (prep: full-JD rescore only) ----------------------
+// "Prep to apply" re-scores against the FULL JD (the intake score reads only a snippet)
+// and flips the row to 'prepped' so the apply actions show. It deliberately does NOT
+// generate any per-JD content - the cover letter uses Tyler's canonical paragraphs and
+// the resume is the canonical persona (with optional, user-driven ATS swaps).
 router.post('/api/apply/:job_id', async (req, res, next) => {
   try {
     const { job_id } = req.params;
@@ -458,21 +414,7 @@ router.post('/api/apply/:job_id', async (req, res, next) => {
     const scores = parseScores(scoreObj);
     const persona = scores.recommended_persona || 'variant1';
 
-    const roleForGen = { ...asScoringRole(row, jdBody) };
-    const masterBank = await loadMasterBank();
-
-    const clRaw = (await generateClIntro(roleForGen, persona, masterBank)).trim();
-    const cl_paragraph = extractClParagraph(clRaw) || clRaw;
-
-    const bulletsRaw = (await generateMentionBullets(roleForGen, persona, masterBank)).trim();
-    const mention_bullets = parseBullets(bulletsRaw);
-
-    await updateRow('Inbox', 'job_id', job_id, {
-      ...scores,
-      status: 'scored',
-      cl_paragraph,
-      mention_bullets: JSON.stringify(mention_bullets),
-    });
+    await updateRow('Inbox', 'job_id', job_id, { ...scores, status: 'prepped' });
 
     res.json({
       ok: true,
@@ -480,8 +422,6 @@ router.post('/api/apply/:job_id', async (req, res, next) => {
       variant1_score: scores.variant1_score,
       variant2_score: scores.variant2_score,
       recommended_persona: persona,
-      cl_paragraph,
-      mention_bullets,
     });
   } catch (err) {
     next(err);
@@ -502,7 +442,6 @@ router.post('/api/applied/:job_id', async (req, res, next) => {
 
     const persona = row.recommended_persona || 'variant1';
     const score = persona === 'variant2' ? row.variant2_score : row.variant1_score;
-    const hasCl = !!String(row.cl_paragraph || '').trim();
 
     const appRow = {
       date_applied: todayMDY(),
@@ -510,7 +449,8 @@ router.post('/api/applied/:job_id', async (req, res, next) => {
       position: row.title || '',
       status: 'pending',
       interview: '',
-      cover_letter: hasCl ? 'yes' : 'no',
+      // A canonical cover letter is always available, so every application ships with one.
+      cover_letter: 'yes',
       post_date: row.posted_date || '',
       num_applicants: row.num_applicants || '',
       referral_to: '',

@@ -98,9 +98,9 @@ function renderJobCard(job) {
     return card;
   }
 
-  // Already prepped: render the saved panel directly (the cover-letter paragraph, mention
-  // bullets, and persona live in the sheet, so no need to regenerate on every reload).
-  if (job.has_cl && job.has_bullets) {
+  // Already prepped (full-JD rescore done): render the saved apply panel directly so it
+  // persists across reloads without re-prepping.
+  if (job.status === 'prepped') {
     renderPrepPanel(job, card, job.recommended_persona || 'variant1');
     return card;
   }

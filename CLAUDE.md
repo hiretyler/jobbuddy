@@ -12,10 +12,16 @@ Read `docs/SCHEMA.md` for the full build contract and `README.md` for the flow.
 
 ## Core flow
 
-capture (bookmarklet / paste box / Discover) -> Inbox row + score both personas -> "Prep to
-apply" (full-JD rescore + CL intro + 3 mention bullets + editable resume w/ ATS swap sidebar) ->
-"Mark applied" writes a clean row to the Applications tracker -> "Scan inbox" updates statuses
+capture (bookmarklet / paste box / Discover) -> Inbox row + snippet-score both personas (also
+extracts clean company + title) -> "Prep to apply" (full-JD rescore, status -> 'prepped', reveals
+the apply actions) -> open canonical resume (+ optional ATS swap sidebar) / canonical cover letter
+-> "Mark applied" writes a clean row to the Applications tracker -> "Scan inbox" updates statuses
 from Gmail on demand.
+
+NO per-JD content generation. The cover letter uses Tyler's fixed canonical paragraphs (only the
+recipient header varies); the resume is the canonical persona. The ONLY job-specific tailoring is
+the scores and the user-driven ATS swap suggestions. (Removed: the old CL-intro and mention-bullet
+generators - they customized per JD, which Tyler does not want.)
 
 ## Always respect
 

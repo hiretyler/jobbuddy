@@ -10,17 +10,15 @@ const VARIANT_FILES = {
   variant2: 'variant2_customer_education.html',
 };
 
-function extractClParagraph(raw) {
-  if (!raw) return '';
-  const fenced = String(raw).match(/```json\s*\n([\s\S]*?)\n```/);
-  const candidate = fenced ? fenced[1] : String(raw);
-  try {
-    const obj = JSON.parse(candidate);
-    if (obj && typeof obj.cl_paragraph === 'string') return obj.cl_paragraph.trim();
-  } catch {}
-  if (!String(raw).includes('```') && !String(raw).trim().startsWith('{')) return String(raw).trim();
-  return '';
-}
+// Tyler's canonical cover-letter opening paragraph per persona. NOT tailored to any job -
+// these are his real, fixed openers. Both the job-specific and persona-only cover letters
+// use them; only the recipient header (company + title) varies per job.
+const CL_CANONICAL_OPENER = {
+  variant1:
+    "Hi there - I'm Tyler Geddes, a GTM and Revenue Enablement leader with over 8 years of experience driving the metrics that matter for customer-facing teams. I don't just use AI on a daily basis - I enable AI adoption for the teams I support, and build functional apps, workflows, and systems for them to use. I've created revenue-linked enablement programs for Sales and Customer Success teams at B2B SaaS companies in several different industries - helping them adapt faster with training that costs less to produce, and changes how reps actually work.",
+  variant2:
+    "Hi there - I'm Tyler Geddes, a customer education leader and AI-native training professional. I build real, functional systems and workflows with AI, and have learned how impactful it is when used for more than just low-effort content generation. For 8+ years I've turned onboarding into a retention strategy - replacing unsustainable 1:1 training with scalable 1:many systems that cut time-to-value and reduce churn. I create the AI infrastructure that supports customer education myself, speeding instructional development cycles without waiting for expensive tools to be procured.",
+};
 
 function esc(s) {
   return String(s || '')
@@ -52,9 +50,9 @@ function extractFromPersona(personaHtml) {
   return { name, contactHtml, tailParagraphs, signOffHtml };
 }
 
-function renderCoverLetter({ company, title, name, contactHtml, generatedFirstParagraph, tailParagraphs, signOffHtml }) {
+function renderCoverLetter({ company, title, name, contactHtml, firstParagraph, tailParagraphs, signOffHtml }) {
   const dateStr = formatDate();
-  const paragraphs = [generatedFirstParagraph, ...tailParagraphs]
+  const paragraphs = [firstParagraph, ...tailParagraphs]
     .filter(Boolean)
     .map((p) => `<p>${esc(p)}</p>`)
     .join('\n');
@@ -173,17 +171,14 @@ router.get('/api/cover-letter/:job_id', async (req, res, next) => {
     const personaHtml = await loadPersonaHtml(filename);
     const { name, contactHtml, tailParagraphs, signOffHtml } = extractFromPersona(personaHtml);
 
-    const generatedFirstParagraph = extractClParagraph(job.cl_paragraph);
-    if (!generatedFirstParagraph) {
-      return res.status(400).send('No generated cover-letter paragraph yet. Click Apply first.');
-    }
-
+    // Canonical opening paragraph - NOT tailored to the job. Only the recipient header
+    // (company + title) is job-specific; the letter body is Tyler's canonical content.
     const html = renderCoverLetter({
       company: job.company,
       title: job.title,
       name,
       contactHtml,
-      generatedFirstParagraph,
+      firstParagraph: CL_CANONICAL_OPENER[variant] || CL_CANONICAL_OPENER.variant1,
       tailParagraphs,
       signOffHtml,
     });
@@ -195,16 +190,8 @@ router.get('/api/cover-letter/:job_id', async (req, res, next) => {
   }
 });
 
-// Persona-only canonical cover letters: Tyler's real opening paragraph + the canonical
-// follow-on paragraphs (2/3) + sign-off (there is no job to tailor against). Used by the
-// header "Canonical resumes" dropdown. Editable in-browser if a tweak is wanted.
-const CL_CANONICAL_OPENER = {
-  variant1:
-    "Hi there - I'm Tyler Geddes, a GTM and Revenue Enablement leader with over 8 years of experience driving the metrics that matter for customer-facing teams. I don't just use AI on a daily basis - I enable AI adoption for the teams I support, and build functional apps, workflows, and systems for them to use. I've created revenue-linked enablement programs for Sales and Customer Success teams at B2B SaaS companies in several different industries - helping them adapt faster with training that costs less to produce, and changes how reps actually work.",
-  variant2:
-    "Hi there - I'm Tyler Geddes, a customer education leader and AI-native training professional. I build real, functional systems and workflows with AI, and have learned how impactful it is when used for more than just low-effort content generation. For 8+ years I've turned onboarding into a retention strategy - replacing unsustainable 1:1 training with scalable 1:many systems that cut time-to-value and reduce churn. I create the AI infrastructure that supports customer education myself, speeding instructional development cycles without waiting for expensive tools to be procured.",
-};
-
+// Persona-only canonical cover letter: the canonical opener + follow-on paragraphs + sign-off,
+// no recipient (there is no job). Used by the header "Canonical resumes" dropdown.
 router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
   try {
     const { variant } = req.params;
@@ -218,7 +205,7 @@ router.get('/api/cover-letter/persona/:variant', async (req, res, next) => {
       title: '',
       name,
       contactHtml,
-      generatedFirstParagraph: CL_CANONICAL_OPENER[variant] || CL_CANONICAL_OPENER.variant1,
+      firstParagraph: CL_CANONICAL_OPENER[variant] || CL_CANONICAL_OPENER.variant1,
       tailParagraphs,
       signOffHtml,
     });
