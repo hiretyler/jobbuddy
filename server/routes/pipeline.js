@@ -77,19 +77,52 @@ function todayMDY() {
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 }
 
-// Derive a best-effort company name from title ("Role at Company"), then URL host.
+// Hosts that are job boards or ATS vendors, not the hiring company.
+const NON_COMPANY_HOSTS = [
+  'greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkdayjobs.com', 'workday.com', 'icims.com',
+  'eightfold.ai', 'linkedin.com', 'builtin.com', 'indeed.com', 'glassdoor.com', 'ziprecruiter.com',
+  'wellfound.com', 'otta.com', 'dice.com', 'monster.com', 'linkedin.cn',
+];
+const JOB_BOARD_WORDS = new Set([
+  'builtin', 'linkedin', 'indeed', 'glassdoor', 'ziprecruiter', 'wellfound', 'otta', 'dice',
+  'monster', 'lever', 'greenhouse', 'ashby', 'workday', 'icims', 'eightfold', 'careers',
+]);
+
+// Validate/clean a candidate company name. Returns '' for junk (job boards, ATS vendors,
+// region/location tokens like "AMER" or "US-Nationwide", page-title cruft).
+function cleanCompany(name) {
+  let n = String(name || '').replace(/\s+/g, ' ').trim();
+  // Strip "... | Careers", "- Careers at X", trailing "Careers" noise.
+  n = n.replace(/\s*[|–-]\s*careers\b.*$/i, '').replace(/\bcareers\s+at\b/i, '').trim();
+  if (n.length < 2) return '';
+  if (JOB_BOARD_WORDS.has(n.toLowerCase())) return '';
+  // Pure region/location/remote tokens, or things that are clearly not a company.
+  if (/^(amer|emea|apac|us|usa|uk|emea-apac|na|latam)$/i.test(n)) return '';
+  if (/^(remote|anywhere|nationwide|us[\s-]?nationwide|worldwide|global)$/i.test(n)) return '';
+  if (/nationwide|\bremote\b|^us[\s-]/i.test(n) && n.split(' ').length <= 3) return '';
+  return n.slice(0, 80);
+}
+
+// Derive a best-effort company name from title ("Role at Company"), then URL host, then body.
+// This is only the initial guess; scoreRow replaces it with the JD-extracted name when scoring.
 function deriveCompany({ title, url, body }) {
   const t = String(title || '');
   const m = t.match(/\bat\s+(.+?)(?:\s*[-|–]\s*.*)?$/i);
-  if (m && m[1].trim()) return m[1].trim();
+  if (m) { const c = cleanCompany(m[1]); if (c) return c; }
   try {
     const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-    const ATS = ['greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkdayjobs.com', 'workday.com', 'icims.com', 'linkedin.com'];
-    if (!ATS.some((h) => host === h || host.endsWith(`.${h}`))) {
+    if (!NON_COMPANY_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
       const label = host.split('.')[0];
-      if (label) return label.charAt(0).toUpperCase() + label.slice(1);
+      const c = cleanCompany(label ? label.charAt(0).toUpperCase() + label.slice(1) : '');
+      if (c) return c;
     }
   } catch {}
+  // Body heuristic: "<Company> is/creates/builds/powers ..." in the opening sentence.
+  const firstChunk = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const bm = firstChunk.match(
+    /^([A-Z][\w.&'’-]*(?:\s+[A-Z][\w.&'’-]*){0,3})\s+(?:is|are|was|were|creates?|builds?|makes?|provides?|powers?|helps?|empowers?|delivers?|offers?)\b/,
+  );
+  if (bm) { const c = cleanCompany(bm[1]); if (c) return c; }
   // last resort: first non-empty line of the body
   const firstLine = String(body || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
   return firstLine.slice(0, 60);
@@ -133,8 +166,13 @@ function parseScores(scoreObj) {
 async function scoreRow(row) {
   const scoreObj = await scoreSnippet(asScoringRole(row));
   const scores = parseScores(scoreObj);
-  await updateRow('Inbox', 'job_id', row.job_id, { ...scores, status: 'scored' });
-  return scores;
+  const update = { ...scores, status: 'scored' };
+  // The model reads the JD and names the actual employer - more reliable than the
+  // title/host guess. Use it when present (fixes "Builtin"->Toast, "AMER"->Quest).
+  const extracted = cleanCompany(scoreObj?.company);
+  if (extracted) update.company = extracted;
+  await updateRow('Inbox', 'job_id', row.job_id, update);
+  return { ...scores, company: extracted || row.company };
 }
 
 // --- POST /jd-capture (bookmarklet / desktop) ----------------------------------

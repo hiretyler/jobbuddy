@@ -104,6 +104,14 @@ Analogous cap for the other persona:
 - Snippet from a known job board (LinkedIn, Indeed, Otta, Wellfound, Glassdoor, ZipRecruiter) is neutral — no adjustment.
 - Recruiter-direct email (no job-board origin, addressed to a candidate, mentions reaching out / interest / sourcing): apply a +0.5 floor on the top persona's score (i.e. raise it to at least the original score + 0.5, capped at 10).
 
+## Company name
+
+Identify the hiring company - the organization that would actually employ this person - as named in the snippet body (often the first sentence, e.g. "Acme is a ...", "At Acme, we ...", or "Join Acme's team"). Put it in the `company` field.
+
+- Return an empty string if the snippet does not clearly name the employer.
+- NEVER return a job board (LinkedIn, BuiltIn, Indeed, Otta, Wellfound, Glassdoor, ZipRecruiter), an ATS vendor (Greenhouse, Lever, iCIMS, Workday, Ashby, Eightfold), or a region/location token (e.g. "AMER", "EMEA", "US-Nationwide", "Nationwide", "Remote", "US").
+- Prefer the clean brand name ("Quest", "Toast"), not a legal suffix or marketing tagline.
+
 ## Output
 
 Pick the top persona (highest score; ties broken by which persona has the cleaner trigger-phrase match in the snippet, not by score-rounding).
@@ -111,5 +119,5 @@ Pick the top persona (highest score; ties broken by which persona has the cleane
 Return ONLY a single fenced JSON block with this exact shape. No prose before or after.
 
 ```json
-{"variant1":{"score":0,"reason":""},"variant2":{"score":0,"reason":""},"top":{"persona":"variant1","score":0,"reason":""}}
+{"company":"","variant1":{"score":0,"reason":""},"variant2":{"score":0,"reason":""},"top":{"persona":"variant1","score":0,"reason":""}}
 ```
