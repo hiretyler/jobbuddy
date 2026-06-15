@@ -187,6 +187,11 @@ function renderPrepPanel(job, card, persona) {
     el('a', { class: 'btn-ghost', href: `/api/resume/${id}`, target: '_blank', rel: 'noopener', text: 'Open resume' }),
     el('a', { class: 'btn-ghost', href: `/api/cover-letter/${id}`, target: '_blank', rel: 'noopener', text: 'Open cover letter' }),
     (() => {
+      const b = el('button', { class: 'btn-ghost', type: 'button', text: 'Open folder' });
+      b.addEventListener('click', () => openFolder(job, b));
+      return b;
+    })(),
+    (() => {
       const b = el('button', { class: 'btn-primary', type: 'button', text: 'Mark applied' });
       b.addEventListener('click', () => markApplied(job, card, b));
       return b;

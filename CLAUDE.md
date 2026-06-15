@@ -56,9 +56,11 @@ generators - they customized per JD, which Tyler does not want.)
 - Routes: pipeline.js (capture/score/apply/applied/inbox + DELETE /api/inbox/:id + open-folder),
   resume/cover-letter/persona/ats-swap (prep), status.js (gmail oauth + /api/scan-inbox),
   discover.js (on-demand sources).
-- Career archive (`server/archive.js`): on Mark applied, writes the JD + a notes file into
-  `$ARCHIVE_DIR/<YYYY-MM-DD>/<Company> - <Role>/` (user drops resume/CL PDFs there). Pull, not
-  push - only on apply, never background. `ARCHIVE_DIR` in `.env`; unset = silently skipped.
+- Career archive (`server/archive.js`): the dated folder is created at **Prep to apply** (so it's
+  ready to drop PDFs into while applying), at `$ARCHIVE_DIR/<YYYY-MM-DD>/<Company> - <Role>/` with
+  the JD + a notes file; Mark applied refreshes the same folder (adds the Applied date). The path
+  is anchored on `captured_at` so it stays stable across prep -> applied -> open-folder. Pull, not
+  push - only on prep/apply, never background. `ARCHIVE_DIR` in `.env`; unset = silently skipped.
   Open-folder button shells out to macOS `open`, path always recomputed from job_id (never
   client-supplied). No server-side PDF rendering (user prints via Cmd+P).
 - The bookmarklet (`web/bookmarklet/install.html`) is GENERATED from `scripts/gen-bookmarklet.mjs`

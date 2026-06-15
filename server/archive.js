@@ -43,19 +43,21 @@ function dateStamp(iso) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-// Deterministic folder path for a (promoted) Inbox row. Same row -> same path, so the
-// open-folder route can recompute it without storing anything.
+// Deterministic folder path for an Inbox row. Anchored on captured_at so the path is stable
+// from "Prep to apply" (when the folder is created) through "Mark applied" and any later
+// open-folder - the date must NOT shift between those moments. Falls back to applied_at, then now.
 export function applicationDir(row) {
   const root = archiveRoot();
   if (!root) return '';
-  const date = dateStamp(row.applied_at);
+  const date = dateStamp(row.captured_at || row.applied_at);
   const company = safe(row.company) || 'Unknown';
   const role = safe(roleOnly(row.title)) || 'Role';
   return join(root, date, `${company} - ${role}`);
 }
 
-// Create the folder and write the JD + notes. Idempotent (re-marking overwrites the two
-// files, never the user's own PDFs). Never throws into the apply flow - returns a result.
+// Create the folder and write the JD + notes. Called at "Prep to apply" (folder ready while
+// you fill out the application) and refreshed at "Mark applied" (adds the applied date).
+// Idempotent - same path, overwrites only the two generated files, never the user's PDFs.
 export async function writeApplicationArchive(row) {
   const dir = applicationDir(row);
   if (!dir) return { ok: false, skipped: true, reason: 'ARCHIVE_DIR not set' };
@@ -71,14 +73,15 @@ export async function writeApplicationArchive(row) {
     const lines = [
       `# ${row.company || 'Unknown'} - ${roleOnly(row.title) || 'Role'}`,
       '',
-      `- Applied: ${dateStamp(row.applied_at)}`,
+      `- Captured: ${dateStamp(row.captured_at)}`,
       `- Posting: ${row.url || ''}`,
       `- Persona used: ${persona}`,
       `- Enablement & L&D score: ${row.variant1_score || '--'}`,
       `- Customer Education score: ${row.variant2_score || '--'}`,
     ];
     if (row.posted_date) lines.push(`- Posted: ${row.posted_date}`);
-    if (row.num_applicants) lines.push(`- Applicants at apply time: ${row.num_applicants}`);
+    if (row.num_applicants) lines.push(`- Applicants: ${row.num_applicants}`);
+    if (row.status === 'applied' && row.applied_at) lines.push(`- Applied: ${dateStamp(row.applied_at)}`);
     lines.push('', '_Drop your final resume + cover letter PDFs in this folder._', '');
     await writeFile(join(dir, 'application.md'), lines.join('\n'), 'utf8');
 

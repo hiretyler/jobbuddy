@@ -416,12 +416,22 @@ router.post('/api/apply/:job_id', async (req, res, next) => {
 
     await updateRow('Inbox', 'job_id', job_id, { ...scores, status: 'prepped' });
 
+    // Create the dated career-archive folder now (with the fresh JD + scores) so it's ready
+    // to drop resume/CL PDFs into while applying - not after Mark applied.
+    let archived = null;
+    if (archiveConfigured()) {
+      const result = await writeApplicationArchive({ ...row, jd_body: jdBody, ...scores, status: 'prepped' });
+      if (result.ok) archived = result.dir;
+      else process.stderr.write(`[apply] archive write failed job=${job_id}: ${result.error || result.reason}\n`);
+    }
+
     res.json({
       ok: true,
       job_id,
       variant1_score: scores.variant1_score,
       variant2_score: scores.variant2_score,
       recommended_persona: persona,
+      archived,
     });
   } catch (err) {
     next(err);
