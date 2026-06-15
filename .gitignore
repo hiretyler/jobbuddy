@@ -13,3 +13,6 @@ cache/bespoke-prompts/*.md
 # local-only Claude Code settings
 .claude/settings.local.json
 logs/
+
+# Local-only canonical PDFs surfaced in the resumes menu (personal docs, public repo)
+canonical-docs/
