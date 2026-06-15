@@ -18,9 +18,6 @@ import discoverRoutes from './routes/discover.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = join(__dirname, '..', 'web');
-// Local-only canonical PDFs (e.g. a hand-written cover letter) surfaced in the resumes menu.
-// Lives outside the public repo (gitignored); drop a PDF in and link it from web/index.html.
-const CANONICAL_DOCS_DIR = process.env.CANONICAL_DOCS_DIR || join(__dirname, '..', 'canonical-docs');
 const PORT = process.env.PORT || 3000;
 
 const app = express();
@@ -29,7 +26,6 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Static UI + bookmarklet
 app.use(express.static(WEB_DIR));
-app.use('/canonical', express.static(CANONICAL_DOCS_DIR));
 app.get('/bookmarklet/install', (_req, res) => res.sendFile(join(WEB_DIR, 'bookmarklet', 'install.html')));
 app.get('/bookmarklet/proxy', (_req, res) => res.sendFile(join(WEB_DIR, 'bookmarklet', 'proxy.html')));
 

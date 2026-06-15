@@ -160,6 +160,41 @@ ${paragraphs}
 `;
 }
 
+// Canonical "AI Adoption" cover letter - a hand-written generic letter (no company/role),
+// served editable + printable exactly like the two persona cover letters. The sign-off is
+// reused from a persona (identical across both). Registered BEFORE the :job_id route so the
+// literal "ai-adoption" segment isn't captured as a job id.
+const CL_AI_ADOPTION = {
+  firstParagraph:
+    "Hi there - I'm Tyler Geddes, an enablement professional with 8+ years building successful programs for customer-facing teams at B2B SaaS companies.",
+  tailParagraphs: [
+    "I have direct experience running AI adoption workshops at Simpro, coaching Sales and Customer Success reps to integrate Gemini into deal and renewal reviews. I paired this with an AI content development system in NotebookLM and Gemini that cut training production time 60% for my team. I also built my own enablement delivery system - using Claude Code and Google Apps Script - that provides daily micro-training content without the licensing and login hassles of a heavy, traditional LMS.",
+    "My experience spans the full spectrum of AI usage: content creation, tool building, and helping others integrate it into their daily workflows. Most importantly, I know how to change attitudes - turning AI into an essential tool, rather than a toy or a threat! I'd welcome the chance to talk through what I can bring to your team.",
+  ],
+};
+
+router.get('/api/cover-letter/ai-adoption', async (req, res, next) => {
+  try {
+    const personaHtml = await loadPersonaHtml(VARIANT_FILES.variant1);
+    const { name, contactHtml, signOffHtml } = extractFromPersona(personaHtml);
+
+    const html = renderCoverLetter({
+      company: '',
+      title: '',
+      name,
+      contactHtml,
+      firstParagraph: CL_AI_ADOPTION.firstParagraph,
+      tailParagraphs: CL_AI_ADOPTION.tailParagraphs,
+      signOffHtml,
+    });
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/api/cover-letter/:job_id', async (req, res, next) => {
   try {
     const { job_id } = req.params;
