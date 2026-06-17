@@ -56,6 +56,13 @@ generators - they customized per JD, which Tyler does not want.)
 - Routes: pipeline.js (capture/score/apply/applied/inbox + DELETE /api/inbox/:id + open-folder),
   resume/cover-letter/persona/ats-swap (prep), status.js (gmail oauth + /api/scan-inbox),
   discover.js (on-demand sources).
+- Canonical docs menu = both persona resumes + both persona cover letters + a hand-written generic
+  "AI Adoption" cover letter (`/api/cover-letter/ai-adoption`, paragraphs hardcoded as
+  `CL_AI_ADOPTION` in cover-letter.js; register any new literal CL route BEFORE the `:job_id` one
+  or the segment is captured as a job id). All editable in-browser, Cmd+P to print.
+- Company/title accuracy: `deriveCompany`/`cleanCompany`/`cleanTitle` in pipeline.js give a clean
+  first guess (reject job-board hosts, region tokens, "Application"-type junk); the snippet-score
+  pass then extracts the authoritative company+title from the JD and `scoreRow` writes them.
 - Career archive (`server/archive.js`): the dated folder is created at **Prep to apply** (so it's
   ready to drop PDFs into while applying), at `$ARCHIVE_DIR/<YYYY-MM-DD>/<Company> - <Role>/` with
   the JD + a notes file; Mark applied refreshes the same folder (adds the Applied date). The path
