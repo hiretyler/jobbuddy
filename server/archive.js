@@ -7,8 +7,8 @@
 //   job-description.txt   the captured JD
 //   application.md        url, scores, persona, dates
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, writeFile, rename, access } from 'node:fs/promises';
+import { join, dirname, basename } from 'node:path';
 import { spawn } from 'node:child_process';
 
 // Read lazily so dotenv is guaranteed loaded by the time these run.
@@ -86,6 +86,29 @@ export async function writeApplicationArchive(row) {
     await writeFile(join(dir, 'application.md'), lines.join('\n'), 'utf8');
 
     return { ok: true, dir };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Move this application's dated folder into a "didnt apply" subfolder of the SAME dated folder
+// (e.g. <ARCHIVE_DIR>/2026-06-17/Acme - Role/ -> <ARCHIVE_DIR>/2026-06-17/didnt apply/Acme - Role/).
+// Recomputes the source path the same way applicationDir does (anchored on captured_at). No-ops
+// gracefully when the archive isn't configured or the source folder doesn't exist.
+export async function moveApplicationDirToDidNotApply(row) {
+  const src = applicationDir(row);
+  if (!src) return { ok: false, skipped: true, reason: 'ARCHIVE_DIR not set' };
+  try {
+    await access(src);
+  } catch {
+    return { ok: false, skipped: true, reason: 'source folder missing' };
+  }
+  const subdir = join(dirname(src), 'didnt apply');
+  const dest = join(subdir, basename(src));
+  try {
+    await mkdir(subdir, { recursive: true });
+    await rename(src, dest);
+    return { ok: true, dir: dest };
   } catch (err) {
     return { ok: false, error: err.message };
   }

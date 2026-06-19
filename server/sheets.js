@@ -5,7 +5,7 @@ const KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || './secrets/servi
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
-// JobBuddy uses TWO tabs:
+// JobBuddy uses FOUR tabs:
 //
 // - 'Inbox': the app's working queue. A captured job lands here, gets scored, prepped,
 //   and (on Apply) promoted to Applications. JD body is stored inline (no separate tab).
@@ -14,6 +14,12 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 //   A clean row is written ONLY on Apply. Code uses snake_case keys; the bootstrap writes
 //   the pretty display headers ("Date Applied", "# Applicants", ...) into row 1. sheets.js
 //   reads/writes POSITIONALLY against TAB_COLUMNS, so the visible header text is cosmetic.
+//
+// - 'Rejected': jobs the user (or the inbox scan) rejected. Carries the three persona scores
+//   + reasons so the decision stays auditable.
+//
+// - 'Did Not Apply': jobs the user prepped/considered but chose not to apply to (with the
+//   persona they had selected and a free-text reason_note).
 //
 // Display header for each Applications column (used by scripts/bootstrap-sheet.js):
 //   date_applied   -> "Date Applied"
@@ -36,12 +42,25 @@ const TAB_COLUMNS = {
     'job_id', 'captured_at', 'source', 'company', 'title', 'url', 'canonical_url',
     'jd_body', 'jd_length', 'posted_date', 'num_applicants',
     'variant1_score', 'variant1_reason', 'variant2_score', 'variant2_reason',
+    'variant3_score', 'variant3_reason',
     'recommended_persona', 'status', 'cl_paragraph', 'mention_bullets', 'applied_at',
   ],
   'Applications': [
     'date_applied', 'company', 'position', 'status', 'interview', 'cover_letter',
     'post_date', 'num_applicants', 'referral_to', 'referred', 'notes',
     'link', 'score', 'persona', 'job_id',
+  ],
+  'Rejected': [
+    'rejected_at', 'company', 'title', 'url',
+    'variant1_score', 'variant1_reason', 'variant2_score', 'variant2_reason',
+    'variant3_score', 'variant3_reason',
+    'recommended_persona', 'jd_length', 'job_id',
+  ],
+  'Did Not Apply': [
+    'marked_at', 'company', 'position', 'selected_persona',
+    'variant1_score', 'variant1_reason', 'variant2_score', 'variant2_reason',
+    'variant3_score', 'variant3_reason',
+    'reason_note', 'link', 'job_id',
   ],
 };
 
@@ -52,6 +71,18 @@ export const DISPLAY_HEADERS = {
     'Date Applied', 'Company', 'Position/Job Title', 'Status', 'Interview?', 'Cover Letter?',
     'Post Date', '# Applicants', 'Referral Requests To', 'Referred?', 'Notes',
     'Link', 'Score', 'Persona', '_job_id',
+  ],
+  'Rejected': [
+    'Rejected At', 'Company', 'Title', 'Link',
+    'V1 Score', 'V1 Reason', 'V2 Score', 'V2 Reason',
+    'V3 Score', 'V3 Reason',
+    'Recommended Persona', 'JD Length', '_job_id',
+  ],
+  'Did Not Apply': [
+    'Marked At', 'Company', 'Position/Job Title', 'Selected Persona',
+    'V1 Score', 'V1 Reason', 'V2 Score', 'V2 Reason',
+    'V3 Score', 'V3 Reason',
+    'Reason', 'Link', '_job_id',
   ],
 };
 

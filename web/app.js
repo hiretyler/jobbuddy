@@ -1,6 +1,11 @@
 'use strict';
 
-const PERSONA_NAME = { variant1: 'Enablement & L&D', variant2: 'Customer Education' };
+const PERSONA_NAME = {
+  variant1: 'GTM Enablement',
+  variant2: 'Customer Education',
+  variant3: 'AI Adoption',
+};
+const PERSONA_ORDER = ['variant1', 'variant2', 'variant3'];
 
 // Jobs deleted this session. A focus-triggered reload can race ahead of the sheet's
 // read-after-write lag and resurrect a just-deleted card; filter those out until reload.
@@ -57,13 +62,16 @@ function showView(name) {
 }
 
 // ---- INBOX -------------------------------------------------------------------
-function scoreBox(label, value, isRec) {
+function scoreRow(persona, score, reason, isRec) {
   return el('div', { class: 'score' + (isRec ? ' is-rec' : '') }, [
-    el('div', { class: 'score-label' }, [
-      el('span', { text: label }),
-      isRec ? el('span', { class: 'check', text: '✓' }) : null,
+    el('div', { class: 'score-top' }, [
+      el('div', { class: 'score-label' }, [
+        el('span', { text: PERSONA_NAME[persona] || persona }),
+        isRec ? el('span', { class: 'rec-tag', text: 'recommended' }) : null,
+      ]),
+      el('div', { class: 'score-val' + (score == null || score === '' ? ' na' : ''), text: fmt(score) }),
     ]),
-    el('div', { class: 'score-val' + (value == null || value === '' ? ' na' : ''), text: fmt(value) }),
+    reason ? el('p', { class: 'score-reason', text: String(reason) }) : null,
   ]);
 }
 
@@ -76,7 +84,6 @@ function renderJobCard(job) {
       el('h3', { class: 'card-company', text: job.company || 'Unknown company' }),
       el('p', { class: 'card-title', text: job.title || '' }),
     ]),
-    job.status === 'applied' ? el('span', { class: 'applied-badge', text: 'Applied' }) : null,
   ]));
 
   card.append(el('div', { class: 'card-links' }, [
@@ -84,141 +91,161 @@ function renderJobCard(job) {
     job.url ? el('a', { class: 'posting-link', href: job.url, target: '_blank', rel: 'noopener', text: 'View posting ↗' }) : null,
   ]));
 
-  card.append(el('div', { class: 'scores' }, [
-    scoreBox(PERSONA_NAME.variant1, job.variant1_score, rec === 'variant1'),
-    scoreBox(PERSONA_NAME.variant2, job.variant2_score, rec === 'variant2'),
-  ]));
+  card.append(el('div', { class: 'scores' }, PERSONA_ORDER.map((p) =>
+    scoreRow(p, job[`${p}_score`], job[`${p}_reason`], rec === p),
+  )));
 
-  if (job.status === 'applied') {
-    const appliedActions = el('div', { class: 'card-actions' });
-    const folderBtn = el('button', { class: 'btn-ghost', type: 'button', text: 'Open folder' });
-    folderBtn.addEventListener('click', () => openFolder(job, folderBtn));
-    appliedActions.append(folderBtn);
-    card.append(appliedActions);
-    return card;
-  }
-
-  // Already prepped (full-JD rescore done): render the saved apply panel directly so it
-  // persists across reloads without re-prepping.
   if (job.status === 'prepped') {
-    renderPrepPanel(job, card, job.recommended_persona || 'variant1');
+    renderPrepPanel(job, card, job.selected_persona || rec || 'variant1');
     return card;
   }
 
-  const actions = el('div', { class: 'card-actions' });
-  const prepBtn = el('button', { class: 'btn-primary', type: 'button', text: 'Prep to apply' });
-  prepBtn.addEventListener('click', () => prepToApply(job, card, prepBtn));
-  actions.append(prepBtn);
-
-  const delBtn = el('button', { class: 'btn-delete', type: 'button', text: 'Delete' });
-  delBtn.addEventListener('click', () => deleteJob(job, card, delBtn));
-  actions.append(delBtn);
-
-  card.append(actions);
-
+  // status === 'scored' (or anything pre-selection): pick a persona or reject.
+  card.append(renderPickPanel(job, card));
   return card;
 }
 
-async function deleteJob(job, card, btn) {
+function renderPickPanel(job, card) {
+  const pick = el('div', { class: 'pick' });
+  const rec = job.recommended_persona;
+
+  const choices = el('div', { class: 'pick-choices' }, PERSONA_ORDER.map((p) => {
+    const b = el('button', {
+      class: 'pick-btn' + (rec === p ? ' is-rec' : ''),
+      type: 'button',
+      text: PERSONA_NAME[p],
+    });
+    b.addEventListener('click', () => selectPersona(job, card, p));
+    return b;
+  }));
+  pick.append(el('p', { class: 'pick-label', text: 'Apply with' }), choices);
+
+  const rejectBtn = el('button', { class: 'btn-delete', type: 'button', text: 'Reject' });
+  rejectBtn.addEventListener('click', () => rejectJob(job, card, rejectBtn));
+  pick.append(el('div', { class: 'pick-foot' }, [rejectBtn]));
+
+  return pick;
+}
+
+async function rejectJob(job, card, btn) {
   const label = job.company || job.title || 'this job';
-  if (!window.confirm(`Delete ${label} from the inbox? This can't be undone.`)) return;
+  if (!window.confirm(`Reject ${label}? It leaves the inbox.`)) return;
   btn.disabled = true;
-  btn.textContent = 'Deleting…';
-  const data = await api(`/api/inbox/${encodeURIComponent(job.job_id)}`, { method: 'DELETE' });
+  btn.textContent = 'Rejecting…';
+  const data = await api(`/api/reject/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
   if (data.ok) {
     deletedIds.add(job.job_id);
     card.remove();
-    toast(`Deleted: ${label}`);
-    $('#inbox-empty').hidden = $('#inbox-list').children.length > 0 || $('#applied-list').children.length > 0;
+    toast(`Rejected: ${label}`);
+    $('#inbox-empty').hidden = $('#inbox-list').children.length > 0;
   } else {
     btn.disabled = false;
-    btn.textContent = 'Delete';
-    toast(data.error || 'Could not delete.');
+    btn.textContent = 'Reject';
+    toast(data.error || 'Could not reject.');
   }
 }
 
-async function prepToApply(job, card, btn, persona) {
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Preparing…';
+async function selectPersona(job, card, persona) {
+  const pick = card.querySelector('.pick');
+  pick.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  const chosen = pick.querySelector(`.pick-btn:nth-of-type(${PERSONA_ORDER.indexOf(persona) + 1})`);
+  if (chosen) chosen.innerHTML = '<span class="spinner spinner-dark"></span>' + PERSONA_NAME[persona];
   try {
-    const opts = persona
-      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona }) }
-      : { method: 'POST' };
-    const data = await api(`/api/apply/${encodeURIComponent(job.job_id)}`, opts);
-
-    if (data.needs_bookmarklet || data.result === 'needs_bookmarklet') {
-      btn.disabled = false;
-      btn.textContent = 'Prep to apply';
-      showBookmarkletNote(card);
-      return;
-    }
+    const data = await api(`/api/select/${encodeURIComponent(job.job_id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona }),
+    });
     if (!data.ok) {
-      btn.disabled = false;
-      btn.textContent = 'Prep to apply';
-      toast(data.error || 'Could not prep this one.');
+      pick.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      if (chosen) chosen.textContent = PERSONA_NAME[persona];
+      toast(data.error || 'Could not select this persona.');
       return;
     }
-    renderPrepPanel(job, card, data.recommended_persona || persona || job.recommended_persona);
+    if (data.resume_url) window.open(data.resume_url, '_blank', 'noopener');
+    if (data.cover_letter_url) window.open(data.cover_letter_url, '_blank', 'noopener');
+    job.selected_persona = data.persona || persona;
+    job.status = 'prepped';
+    pick.remove();
+    renderPrepPanel(job, card, job.selected_persona);
   } catch (_e) {
-    btn.disabled = false;
-    btn.textContent = 'Prep to apply';
-    toast('Network error preparing this job.');
+    pick.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    if (chosen) chosen.textContent = PERSONA_NAME[persona];
+    toast('Network error selecting this persona.');
   }
-}
-
-function showBookmarkletNote(card) {
-  let note = card.querySelector('.bm-note');
-  if (note) return;
-  note = el('p', { class: 'note is-warn bm-note', html:
-    'This site needs the bookmarklet to grab the description. ' +
-    '<a href="/bookmarklet/install" target="_blank" rel="noopener">Install it</a>, open the posting, and click it.' });
-  card.append(note);
 }
 
 function renderPrepPanel(job, card, persona) {
-  card.querySelectorAll('.card-actions, .prep, .bm-note').forEach((n) => n.remove());
-  const id = encodeURIComponent(job.job_id);
-  const other = persona === 'variant1' ? 'variant2' : 'variant1';
+  card.querySelectorAll('.pick, .prep').forEach((n) => n.remove());
 
   const prep = el('div', { class: 'prep' });
-  prep.append(el('p', { class: 'prep-rec', html: `Recommended persona: <strong>${PERSONA_NAME[persona] || persona}</strong>` }));
+  prep.append(el('p', { class: 'prep-rec', html: `Applying as <strong>${PERSONA_NAME[persona] || persona}</strong>` }));
+
+  // Re-open the selected persona's docs (in case the tabs were closed).
+  prep.append(el('p', { class: 'prep-docs' }, [
+    el('span', { class: 'prep-docs-label', text: 'Reopen: ' }),
+    el('a', { class: 'doc-link', href: `/api/resume/${job.job_id}`, target: '_blank', rel: 'noopener', text: 'Resume ↗' }),
+    el('span', { class: 'doc-sep', text: ' · ' }),
+    el('a', { class: 'doc-link', href: `/api/cover-letter/${job.job_id}`, target: '_blank', rel: 'noopener', text: 'Cover letter ↗' }),
+  ]));
 
   prep.append(el('div', { class: 'prep-actions' }, [
-    el('a', { class: 'btn-ghost', href: `/api/resume/${id}`, target: '_blank', rel: 'noopener', text: 'Open resume' }),
-    el('a', { class: 'btn-ghost', href: `/api/cover-letter/${id}`, target: '_blank', rel: 'noopener', text: 'Open cover letter' }),
+    (() => {
+      const b = el('button', { class: 'btn-primary', type: 'button', text: 'Mark applied' });
+      b.addEventListener('click', () => markApplied(job, card, b));
+      return b;
+    })(),
+    (() => {
+      const b = el('button', { class: 'btn-ghost', type: 'button', text: 'Help with questions' });
+      b.addEventListener('click', () => helpWithQuestions(job, b));
+      return b;
+    })(),
     (() => {
       const b = el('button', { class: 'btn-ghost', type: 'button', text: 'Open folder' });
       b.addEventListener('click', () => openFolder(job, b));
       return b;
     })(),
     (() => {
-      const b = el('button', { class: 'btn-primary', type: 'button', text: 'Mark applied' });
-      b.addEventListener('click', () => markApplied(job, card, b));
+      const b = el('button', { class: 'btn-delete', type: 'button', text: 'Did not apply' });
+      b.addEventListener('click', () => didNotApply(job, card, b));
       return b;
     })(),
   ]));
 
-  prep.append(el('p', { class: 'swap-hint', text: 'Swap suggestions for this ATS live in the resume tab’s sidebar.' }));
-
-  const toggle = el('div', { class: 'persona-toggle' }, [el('span', { text: 'Wrong fit?' })]);
-  const swap = el('button', { type: 'button', text: `Use ${PERSONA_NAME[other]}` });
-  swap.addEventListener('click', () => {
-    prep.remove();
-    const actions = el('div', { class: 'card-actions' });
-    const b = el('button', { class: 'btn-primary', type: 'button', text: 'Prep to apply' });
-    actions.append(b);
-    card.append(actions);
-    prepToApply(job, card, b, other);
-  });
-  toggle.append(swap);
-
-  const delBtn = el('button', { class: 'btn-delete', type: 'button', text: 'Delete' });
-  delBtn.addEventListener('click', () => deleteJob(job, card, delBtn));
-  toggle.append(delBtn);
-
-  prep.append(toggle);
-
   card.append(prep);
+}
+
+async function helpWithQuestions(job, btn) {
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = 'Starting…';
+  const data = await api(`/api/help-questions/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
+  btn.disabled = false;
+  btn.textContent = prev;
+  if (data.ok) toast('Opened a Claude terminal to help with the application questions.');
+  else toast(data.error || 'Could not start the helper.');
+}
+
+async function didNotApply(job, card, btn) {
+  const label = job.company || job.title || 'this job';
+  if (!window.confirm(`Mark ${label} as not applied? It leaves the inbox.`)) return;
+  const note = window.prompt('Optional note (why not):', '') || '';
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  const data = await api(`/api/did-not-apply/${encodeURIComponent(job.job_id)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason_note: note }),
+  });
+  if (data.ok) {
+    deletedIds.add(job.job_id);
+    toast(`Did not apply: ${label}`);
+    loadInbox();
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Did not apply';
+    toast(data.error || 'Could not save.');
+  }
 }
 
 async function openFolder(job, btn) {
@@ -236,9 +263,8 @@ async function markApplied(job, card, btn) {
   btn.innerHTML = '<span class="spinner"></span>Saving…';
   const data = await api(`/api/applied/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
   if (data.ok) {
-    const lines = [`Marked applied: ${job.company || job.title || 'job'}`];
-    if (data.archived) lines.push('JD + notes saved to your archive folder.');
-    toast(lines);
+    deletedIds.add(job.job_id);
+    toast(`Marked applied: ${job.company || job.title || 'job'}`);
     loadInbox();
   } else {
     btn.disabled = false;
@@ -250,18 +276,11 @@ async function markApplied(job, card, btn) {
 async function loadInbox() {
   const data = await api('/api/inbox');
   const jobs = (data.jobs || []).filter((j) => !deletedIds.has(j.job_id));
-  const active = jobs.filter((j) => j.status !== 'applied');
-  const applied = jobs.filter((j) => j.status === 'applied');
 
   const list = $('#inbox-list');
   list.innerHTML = '';
-  active.forEach((j) => list.append(renderJobCard(j)));
-  $('#inbox-empty').hidden = active.length > 0 || applied.length > 0;
-
-  const appliedList = $('#applied-list');
-  appliedList.innerHTML = '';
-  applied.forEach((j) => appliedList.append(renderJobCard(j)));
-  $('#applied-wrap').hidden = applied.length === 0;
+  jobs.forEach((j) => list.append(renderJobCard(j)));
+  $('#inbox-empty').hidden = jobs.length > 0;
 }
 
 // ---- CAPTURE -----------------------------------------------------------------
@@ -384,30 +403,6 @@ function renderDiscoverRow(job) {
   return card;
 }
 
-// ---- SCAN --------------------------------------------------------------------
-async function onScan() {
-  const btn = $('#scan-btn');
-  btn.disabled = true;
-  const prev = btn.textContent;
-  btn.textContent = 'Scanning…';
-  try {
-    const data = await api('/api/scan-inbox', { method: 'POST' });
-    const updated = data.updated || [];
-    const lines = [`Scanned ${data.scanned ?? 0}, updated ${updated.length}`];
-    updated.slice(0, 4).forEach((u) => lines.push(`${u.company}: ${u.from} → ${u.to}`));
-    if (updated.length > 4) lines.push(`+${updated.length - 4} more`);
-    const review = (data.needs_review || []).length;
-    if (review) lines.push(`${review} need review`);
-    toast(lines);
-    loadInbox();
-  } catch (_e) {
-    toast('Scan failed.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = prev;
-  }
-}
-
 // ---- menu --------------------------------------------------------------------
 function setupMenu() {
   const btn = $('#resumes-btn');
@@ -444,7 +439,6 @@ function init() {
   $('#tab-inbox').addEventListener('click', () => showView('inbox'));
   $('#tab-discover').addEventListener('click', () => showView('discover'));
   $('#tab-setup').addEventListener('click', () => showView('setup'));
-  $('#scan-btn').addEventListener('click', onScan);
   $('#capture-form').addEventListener('submit', onCapture);
   $('#discover-form').addEventListener('submit', onDiscover);
   setupMenu();

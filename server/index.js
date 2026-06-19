@@ -5,15 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 // Route modules (each default-exports an Express router). Created by Wave 1 agents:
 //   pipeline.js  - capture (/jd-capture, /api/ingest), inbox list, score, apply, applied
-//   resume.js / cover-letter.js / persona.js / ats-swap.js - prep + editor
-//   status.js    - /api/scan-inbox (confirmation/rejection/interview), oauth handshake
+//   resume.js / cover-letter.js / persona.js - prep (read-only split docs, editable spans only)
 //   discover.js  - /api/discover (on-demand curated remote sources)
+// Gmail status scanning moved out of the Node app to apps-script/ (Apps Script
+// time trigger running as the user); the old status.js routes were removed.
 import pipelineRoutes from './routes/pipeline.js';
 import resumeRoutes from './routes/resume.js';
 import coverLetterRoutes from './routes/cover-letter.js';
 import personaRoutes from './routes/persona.js';
-import atsSwapRoutes from './routes/ats-swap.js';
-import statusRoutes from './routes/status.js';
 import discoverRoutes from './routes/discover.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +34,6 @@ app.use(pipelineRoutes);
 app.use(resumeRoutes);
 app.use(coverLetterRoutes);
 app.use(personaRoutes);
-app.use(atsSwapRoutes);
-app.use(statusRoutes);
 app.use(discoverRoutes);
 
 // eslint-disable-next-line no-unused-vars

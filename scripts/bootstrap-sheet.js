@@ -7,9 +7,10 @@ import { GoogleAuth } from 'google-auth-library';
 import { DISPLAY_HEADERS, _columnsFor } from '../server/sheets.js';
 
 // Populates the EXISTING JobBuddy spreadsheet (GOOGLE_SHEET_ID in .env, created in the user's
-// Drive and shared with the service account as Editor). Ensures the Inbox + Applications tabs
-// exist, writes the pretty display headers, imports the user's historical applications, and
-// bolds/freezes the header rows. Idempotent-ish (rewrites headers + re-imports history). Run:
+// Drive and shared with the service account as Editor). Ensures the Inbox + Applications +
+// Rejected + Did Not Apply tabs exist, writes the pretty display headers, imports the user's
+// historical applications, and bolds/freezes the header rows. Idempotent-ish (rewrites headers +
+// re-imports history). Run:
 //   node scripts/bootstrap-sheet.js
 //
 // PREREQ: the sheet must be shared with the service account email as Editor, or this 403s.
@@ -17,6 +18,11 @@ import { DISPLAY_HEADERS, _columnsFor } from '../server/sheets.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || './secrets/service-account.json';
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+
+function quoteTab(tabName) {
+  if (/[^A-Za-z0-9_]/.test(tabName)) return `'${tabName.replace(/'/g, "''")}'`;
+  return tabName;
+}
 
 function parseHistory(md) {
   const lines = md.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('|'));
@@ -38,7 +44,9 @@ async function main() {
   const existing = meta.data.sheets.map((s) => ({ id: s.properties.sheetId, title: s.properties.title }));
   const byTitle = Object.fromEntries(existing.map((s) => [s.title, s.id]));
 
-  // Ensure Applications + Inbox tabs. Rename the lone placeholder tab to Applications if needed.
+  const TABS = ['Inbox', 'Applications', 'Rejected', 'Did Not Apply'];
+
+  // Ensure all tabs. Rename the lone placeholder tab to Applications if needed.
   const requests = [];
   if (!byTitle['Applications']) {
     if (existing.length === 1 && !byTitle['Inbox']) {
@@ -48,7 +56,10 @@ async function main() {
       requests.push({ addSheet: { properties: { title: 'Applications' } } });
     }
   }
-  if (!byTitle['Inbox']) requests.push({ addSheet: { properties: { title: 'Inbox' } } });
+  for (const t of TABS) {
+    if (t === 'Applications') continue;
+    if (!byTitle[t]) requests.push({ addSheet: { properties: { title: t } } });
+  }
   if (requests.length) {
     const res = await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests } });
     for (const r of res.data.replies || []) {
@@ -56,15 +67,12 @@ async function main() {
     }
   }
 
-  // Headers
+  // Headers (pretty display row 1, for every tab)
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
       valueInputOption: 'RAW',
-      data: [
-        { range: 'Inbox!A1', values: [DISPLAY_HEADERS['Inbox']] },
-        { range: 'Applications!A1', values: [DISPLAY_HEADERS['Applications']] },
-      ],
+      data: TABS.map((t) => ({ range: `${quoteTab(t)}!A1`, values: [DISPLAY_HEADERS[t]] })),
     },
   });
 
@@ -92,7 +100,7 @@ async function main() {
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
-      requests: ['Inbox', 'Applications'].flatMap((t) => [
+      requests: TABS.flatMap((t) => [
         { repeatCell: { range: { sheetId: byTitle[t], startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true } } }, fields: 'userEnteredFormat.textFormat.bold' } },
         { updateSheetProperties: { properties: { sheetId: byTitle[t], gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' } },
       ]),

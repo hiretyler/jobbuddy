@@ -5,27 +5,43 @@
 // prepped on demand, and is promoted to the Applications tab on Apply.
 //
 // Endpoints (all default-exported on one router):
-//   POST   /jd-capture          bookmarklet/desktop capture -> create Inbox row + score
+//   POST   /jd-capture          bookmarklet/desktop capture -> create Inbox row + full-JD 3-persona score
 //   OPTIONS/jd-capture          CORS preflight
-//   POST   /api/ingest          mobile paste / Discover click -> fetch JD + create row + score
+//   POST   /api/ingest          mobile paste / Discover click -> fetch JD + create row + full-JD 3-persona score
 //   GET    /api/inbox           list inbox cards for the UI
-//   POST   /api/score/:job_id   (re)run snippet scoring on a row
-//   POST   /api/apply/:job_id   full-JD rescore + generate CL para + mention bullets
-//   POST   /api/applied/:job_id promote: write a clean Applications row (idempotent)
+//   POST   /api/score/:job_id   (re)run full-JD 3-persona scoring on a row
+//   POST   /api/reject/:job_id  move to the Rejected tab + remove from Inbox
+//   POST   /api/select/:job_id  pick a persona, flip to 'prepped', create the dated archive folder
+//   POST   /api/applied/:job_id promote: write a clean Applications row (idempotent) + remove from Inbox
+//   POST   /api/did-not-apply/:job_id  log the decision, file archive under "didnt apply", remove from Inbox
+//   POST   /api/help-questions/:job_id prep the archive folder + open a Claude terminal there
+//   POST   /api/open-folder/:job_id    reveal the dated archive folder in Finder
 
 import { randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import { readTab, findRow, appendRows, updateRow, deleteRow } from '../sheets.js';
 import { canonicalIdentity } from '../identity.js';
-import { scoreSnippet, rescoreFullJd } from '../claude/subprocess.js';
+import { scoreFullJd3 } from '../claude/subprocess.js';
 import { fetchJdBody, isAuthWalled } from '../jd-prefetch.js';
 import { ingestUrl } from '../manual.js';
-import { archiveConfigured, writeApplicationArchive, applicationDir, openInFinder } from '../archive.js';
+import {
+  archiveConfigured, writeApplicationArchive, applicationDir, openInFinder,
+  moveApplicationDirToDidNotApply,
+} from '../archive.js';
+import {
+  loadPersonaHtml, renderSplitDoc, RESUME_FILES, COVER_LETTER_FILES,
+} from '../personas.js';
+import { openTerminalWithClaude } from '../terminal.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, '..', '..');
 
 const router = Router();
 
 const MIN_BODY_CHARS = 300;
-const SNIPPET_CAP = 1500;
 
 // --- CORS (bookmarklet posts cross-origin) -------------------------------------
 function cors(req, res, next) {
@@ -52,6 +68,45 @@ function nowIso() {
 function todayMDY() {
   const d = new Date();
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
+const PERSONAS = new Set(['variant1', 'variant2', 'variant3']);
+const PERSONA_LABELS = {
+  variant1: 'GTM / Revenue Enablement',
+  variant2: 'Customer Education',
+  variant3: 'Internal Enablement (AI Adoption)',
+};
+
+// Locate + read the master bank JSON (the fuller career bank). Mirrors the contact.json
+// precedent in personas.js: MASTER_BANK_PATH override, then secrets/, then the tracked example.
+const MASTER_BANK_PATH = process.env.MASTER_BANK_PATH || join(REPO_ROOT, 'secrets', 'master-bank.json');
+const MASTER_BANK_EXAMPLE = join(REPO_ROOT, 'assets', 'master-bank.example.json');
+async function readMasterBank() {
+  for (const p of [MASTER_BANK_PATH, MASTER_BANK_EXAMPLE]) {
+    try {
+      return await readFile(p, 'utf8');
+    } catch { /* try the next source */ }
+  }
+  return null;
+}
+
+// Ensure the row has a usable JD body, reusing the same refetch-if-short fallback the old
+// /api/apply had. Returns { ok, jdBody } on success or { ok:false, reason, ... } to relay.
+async function ensureJdBody(row) {
+  let jdBody = String(row.jd_body || '');
+  if (jdBody.trim().length >= MIN_BODY_CHARS) return { ok: true, jdBody };
+  if (isAuthWalled(row.url)) {
+    return { ok: false, result: 'needs_bookmarklet', install_url: '/bookmarklet/install', reason: 'auth-walled' };
+  }
+  try {
+    const fetched = await fetchJdBody(row.url);
+    jdBody = fetched.body;
+    await updateRow('Inbox', 'job_id', row.job_id, { jd_body: jdBody, jd_length: String(jdBody.length) });
+    return { ok: true, jdBody };
+  } catch (err) {
+    const reason = err.code === 'AUTH_WALLED' ? 'auth-walled' : err.message;
+    return { ok: false, result: 'needs_bookmarklet', install_url: '/bookmarklet/install', reason };
+  }
 }
 
 // Hosts that are job boards or ATS vendors, not the hiring company.
@@ -116,43 +171,47 @@ function deriveCompany({ title, url, body }) {
   return firstLine.slice(0, 60);
 }
 
-// Shape an Inbox row into the {role, company, location, snippet, ats_url}
-// contract the subprocess scoring helpers read.
-function asScoringRole(row, jdBody) {
-  const body = jdBody != null ? jdBody : row.jd_body;
+// Shape an Inbox row into the {role, company, location, ats_url} contract the
+// full-JD scoring helper reads. The JD body is passed separately.
+function asScoringRole(row) {
   return {
     company: row.company || '',
     role: row.title || '',
     location: '',
     ats_url: row.url || '',
-    snippet: String(body || '').slice(0, SNIPPET_CAP),
-    snippet_score: row.variant1_score || row.variant2_score || '',
-    recommended_persona: row.recommended_persona || '',
-    jd_body: body || '',
   };
 }
 
-// Score JSON shape: {variant1:{score,reason}, variant2:{score,reason}, top:{persona,score,reason}}
+// Score JSON shape:
+// {company, role, variant1:{score,reason}, variant2:{...}, variant3:{...}, top:{persona,score,reason}}
 function parseScores(scoreObj) {
   const v1 = scoreObj?.variant1 || {};
   const v2 = scoreObj?.variant2 || {};
+  const v3 = scoreObj?.variant3 || {};
   const s1 = Number(v1.score) || 0;
   const s2 = Number(v2.score) || 0;
-  // recommended = higher score; tie -> variant1
-  const recommended = s2 > s1 ? 'variant2' : 'variant1';
+  const s3 = Number(v3.score) || 0;
+  // recommended = the model's top pick; fall back to highest score, ties variant1 > variant2 > variant3.
+  const top = scoreObj?.top?.persona;
+  let recommended = ['variant1', 'variant2', 'variant3'].includes(top) ? top : null;
+  if (!recommended) {
+    recommended = (s1 >= s2 && s1 >= s3) ? 'variant1' : (s2 >= s3 ? 'variant2' : 'variant3');
+  }
   return {
     variant1_score: s1,
     variant1_reason: String(v1.reason || ''),
     variant2_score: s2,
     variant2_reason: String(v2.reason || ''),
+    variant3_score: s3,
+    variant3_reason: String(v3.reason || ''),
     recommended_persona: recommended,
   };
 }
 
-// Run snippet scoring on an Inbox row and persist the scores. Returns the parsed
-// score fields. Sets status='scored'.
+// Run authoritative full-JD 3-persona scoring on an Inbox row and persist the
+// scores + extracted company/title. Sets status='scored'. Returns parsed fields.
 async function scoreRow(row) {
-  const scoreObj = await scoreSnippet(asScoringRole(row));
+  const scoreObj = await scoreFullJd3(asScoringRole(row), row.jd_body || '');
   const scores = parseScores(scoreObj);
   const update = { ...scores, status: 'scored' };
   // The model reads the JD and names the actual employer + posted title - more reliable
@@ -223,6 +282,8 @@ router.post('/jd-capture', cors, async (req, res, next) => {
       variant1_reason: '',
       variant2_score: '',
       variant2_reason: '',
+      variant3_score: '',
+      variant3_reason: '',
       recommended_persona: '',
       status: 'new',
       cl_paragraph: '',
@@ -289,6 +350,8 @@ router.post('/api/ingest', cors, async (req, res, next) => {
       variant1_reason: '',
       variant2_score: '',
       variant2_reason: '',
+      variant3_score: '',
+      variant3_reason: '',
       recommended_persona: '',
       status: 'new',
       cl_paragraph: '',
@@ -337,7 +400,11 @@ router.get('/api/inbox', async (_req, res, next) => {
         source: r.source,
         status: r.status,
         variant1_score: r.variant1_score === '' ? null : Number(r.variant1_score),
+        variant1_reason: r.variant1_reason || '',
         variant2_score: r.variant2_score === '' ? null : Number(r.variant2_score),
+        variant2_reason: r.variant2_reason || '',
+        variant3_score: r.variant3_score === '' ? null : Number(r.variant3_score),
+        variant3_reason: r.variant3_reason || '',
         recommended_persona: r.recommended_persona,
         captured_at: r.captured_at,
       }))
@@ -382,56 +449,76 @@ router.post('/api/score/:job_id', async (req, res, next) => {
   }
 });
 
-// --- POST /api/apply/:job_id (prep: full-JD rescore only) ----------------------
-// "Prep to apply" re-scores against the FULL JD (the intake score reads only a snippet)
-// and flips the row to 'prepped' so the apply actions show. It deliberately does NOT
-// generate any per-JD content - the cover letter uses Tyler's canonical paragraphs and
-// the resume is the canonical persona (with optional, user-driven ATS swaps).
-router.post('/api/apply/:job_id', async (req, res, next) => {
+// --- POST /api/reject/:job_id (move an Inbox job to the Rejected tab) -----------
+// Records the three persona scores + reasons so the rejection stays auditable, then removes
+// the row from the live Inbox queue.
+router.post('/api/reject/:job_id', async (req, res, next) => {
   try {
     const { job_id } = req.params;
     const row = await findRow('Inbox', 'job_id', job_id);
     if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
 
-    let jdBody = String(row.jd_body || '');
-    // If the row was created metadata-only (auth-walled ingest), try a fetch now.
-    if (jdBody.trim().length < MIN_BODY_CHARS) {
-      if (isAuthWalled(row.url)) {
-        return res.json({ ok: false, result: 'needs_bookmarklet', install_url: '/bookmarklet/install', reason: 'auth-walled' });
-      }
-      try {
-        const fetched = await fetchJdBody(row.url);
-        jdBody = fetched.body;
-        await updateRow('Inbox', 'job_id', job_id, { jd_body: jdBody, jd_length: String(jdBody.length) });
-      } catch (err) {
-        const reason = err.code === 'AUTH_WALLED' ? 'auth-walled' : err.message;
-        return res.json({ ok: false, result: 'needs_bookmarklet', install_url: '/bookmarklet/install', reason });
-      }
+    await appendRows('Rejected', [{
+      rejected_at: nowIso(),
+      company: row.company || '',
+      title: row.title || '',
+      url: row.url || '',
+      variant1_score: row.variant1_score || '',
+      variant1_reason: row.variant1_reason || '',
+      variant2_score: row.variant2_score || '',
+      variant2_reason: row.variant2_reason || '',
+      variant3_score: row.variant3_score || '',
+      variant3_reason: row.variant3_reason || '',
+      recommended_persona: row.recommended_persona || '',
+      jd_length: row.jd_length || '',
+      job_id,
+    }]);
+    await deleteRow('Inbox', 'job_id', job_id);
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- POST /api/select/:job_id (pick the persona, prep to apply) -----------------
+// Replaces the old "Prep to apply" /api/apply. The user picks which persona to apply with;
+// we store it on recommended_persona (the resume/CL routes read that to choose the file),
+// flip status to 'prepped', ensure the JD body is present, and create the dated archive
+// folder so it's ready to drop PDFs into. No re-score, no per-JD content generation.
+router.post('/api/select/:job_id', async (req, res, next) => {
+  try {
+    const { job_id } = req.params;
+    const persona = String(req.body?.persona || '').trim();
+    if (!PERSONAS.has(persona)) {
+      return res.status(400).json({ ok: false, error: `invalid persona: ${persona || '(empty)'}` });
     }
 
-    // Full-JD rescore (updates both variant scores + recommended persona).
-    const scoreObj = await rescoreFullJd(asScoringRole(row, jdBody), jdBody);
-    const scores = parseScores(scoreObj);
-    const persona = scores.recommended_persona || 'variant1';
+    const row = await findRow('Inbox', 'job_id', job_id);
+    if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
 
-    await updateRow('Inbox', 'job_id', job_id, { ...scores, status: 'prepped' });
+    const jd = await ensureJdBody(row);
+    if (!jd.ok) return res.json({ ok: false, ...jd });
 
-    // Create the dated career-archive folder now (with the fresh JD + scores) so it's ready
-    // to drop resume/CL PDFs into while applying - not after Mark applied.
-    let archived = null;
+    await updateRow('Inbox', 'job_id', job_id, { recommended_persona: persona, status: 'prepped' });
+
+    // Create the dated career-archive folder now (with the JD + capture-time scores) so it's
+    // ready to drop resume/CL PDFs into while applying - not after Mark applied.
+    let archivePath = null;
     if (archiveConfigured()) {
-      const result = await writeApplicationArchive({ ...row, jd_body: jdBody, ...scores, status: 'prepped' });
-      if (result.ok) archived = result.dir;
-      else process.stderr.write(`[apply] archive write failed job=${job_id}: ${result.error || result.reason}\n`);
+      const result = await writeApplicationArchive({
+        ...row, recommended_persona: persona, jd_body: jd.jdBody, status: 'prepped',
+      });
+      if (result.ok) archivePath = result.dir;
+      else process.stderr.write(`[select] archive write failed job=${job_id}: ${result.error || result.reason}\n`);
     }
 
     res.json({
       ok: true,
-      job_id,
-      variant1_score: scores.variant1_score,
-      variant2_score: scores.variant2_score,
-      recommended_persona: persona,
-      archived,
+      persona,
+      resume_url: `/api/resume/${job_id}`,
+      cover_letter_url: `/api/cover-letter/${job_id}`,
+      archive_path: archivePath,
     });
   } catch (err) {
     next(err);
@@ -473,9 +560,9 @@ router.post('/api/applied/:job_id', async (req, res, next) => {
     };
     await appendRows('Applications', [appRow]);
     const appliedAt = nowIso();
-    await updateRow('Inbox', 'job_id', job_id, { status: 'applied', applied_at: appliedAt });
 
-    // Drop the JD + notes into the dated career-archive folder for this application.
+    // Refresh the dated career-archive folder (adds the applied date) BEFORE deleting the
+    // Inbox row - applicationDir is anchored on captured_at, so do this while the row exists.
     let archived = null;
     if (archiveConfigured()) {
       const result = await writeApplicationArchive({ ...row, status: 'applied', applied_at: appliedAt });
@@ -483,7 +570,110 @@ router.post('/api/applied/:job_id', async (req, res, next) => {
       else process.stderr.write(`[applied] archive write failed job=${job_id}: ${result.error || result.reason}\n`);
     }
 
+    // Inbox is now a live queue: terminal actions remove the row (the Applications tracker
+    // is the system of record for a submitted application).
+    await deleteRow('Inbox', 'job_id', job_id);
+
     res.json({ ok: true, archived });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- POST /api/did-not-apply/:job_id (considered, chose not to apply) -----------
+// Records the decision (with the persona that was selected + an optional free-text reason)
+// to the "Did Not Apply" tab, files the dated archive folder under a "didnt apply" subfolder
+// of the same date, then removes the row from the live Inbox queue.
+router.post('/api/did-not-apply/:job_id', async (req, res, next) => {
+  try {
+    const { job_id } = req.params;
+    const reasonNote = String(req.body?.reason_note || '');
+    const row = await findRow('Inbox', 'job_id', job_id);
+    if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
+
+    await appendRows('Did Not Apply', [{
+      marked_at: nowIso(),
+      company: row.company || '',
+      position: row.title || '',
+      selected_persona: row.recommended_persona || '',
+      variant1_score: row.variant1_score || '',
+      variant1_reason: row.variant1_reason || '',
+      variant2_score: row.variant2_score || '',
+      variant2_reason: row.variant2_reason || '',
+      variant3_score: row.variant3_score || '',
+      variant3_reason: row.variant3_reason || '',
+      reason_note: reasonNote,
+      link: row.url || '',
+      job_id,
+    }]);
+
+    // File the dated folder under "<date>/didnt apply/<Company - Role>/". No-ops gracefully
+    // if the archive isn't configured or the folder was never created.
+    if (archiveConfigured()) {
+      const moved = await moveApplicationDirToDidNotApply(row);
+      if (!moved.ok && !moved.skipped) {
+        process.stderr.write(`[did-not-apply] archive move failed job=${job_id}: ${moved.error}\n`);
+      }
+    }
+
+    await deleteRow('Inbox', 'job_id', job_id);
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- POST /api/help-questions/:job_id (spawn a Claude terminal for this job) -----
+// Preps the job's archive folder with the selected persona's resume + cover letter, a copy of
+// the master bank, and a priming CLAUDE.md, then opens Terminal.app running the claude CLI
+// there - so Tyler can answer detailed application questions with full context loaded.
+router.post('/api/help-questions/:job_id', async (req, res, next) => {
+  try {
+    const { job_id } = req.params;
+    if (!archiveConfigured()) {
+      return res.status(400).json({ ok: false, error: 'ARCHIVE_DIR not set' });
+    }
+    const row = await findRow('Inbox', 'job_id', job_id);
+    if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
+
+    const dir = applicationDir(row);
+    const persona = PERSONAS.has(row.recommended_persona) ? row.recommended_persona : 'variant1';
+    const personaLabel = PERSONA_LABELS[persona];
+
+    // Render the SELECTED persona's resume + cover letter for this job (same loader the
+    // resume/cover-letter routes use).
+    const resumeFile = RESUME_FILES[persona] || RESUME_FILES.variant1;
+    const clFile = COVER_LETTER_FILES[persona] || COVER_LETTER_FILES.variant1;
+    const resumeHtml = renderSplitDoc({ html: await loadPersonaHtml(resumeFile), job: row, kind: 'resume' });
+    const clHtml = renderSplitDoc({ html: await loadPersonaHtml(clFile), job: row, kind: 'cover-letter' });
+
+    await writeFile(join(dir, 'resume.html'), resumeHtml, 'utf8');
+    await writeFile(join(dir, 'cover-letter.html'), clHtml, 'utf8');
+
+    const bank = await readMasterBank();
+    if (bank != null) await writeFile(join(dir, 'master-bank.json'), bank, 'utf8');
+
+    const claudeMd = [
+      `# Help Tyler answer application questions - ${row.company || 'Unknown'} / ${String(row.title || '').split('|')[0].trim() || 'Role'}`,
+      '',
+      'You are helping Tyler answer detailed application questions for THIS job.',
+      '',
+      '- The job description is in `job-description.txt`.',
+      `- The resume and cover letter being submitted are \`resume.html\` and \`cover-letter.html\` (selected persona: ${personaLabel}).`,
+      '- `master-bank.json` holds Tyler\'s fuller experience - draw on it for specifics.',
+      '',
+      'Answer questions concisely, in Tyler\'s voice, grounded in the bank and the submitted',
+      'documents. Never invent facts. When a question asks for an example or metric, pull it',
+      'from the bank rather than guessing.',
+      '',
+    ].join('\n');
+    await writeFile(join(dir, 'CLAUDE.md'), claudeMd, 'utf8');
+
+    const launched = await openTerminalWithClaude(dir);
+    if (!launched) process.stderr.write(`[help-questions] terminal launch failed job=${job_id}\n`);
+
+    res.json({ ok: true, folder: dir });
   } catch (err) {
     next(err);
   }

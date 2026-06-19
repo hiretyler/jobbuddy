@@ -178,8 +178,6 @@ a:hover { text-decoration: underline; }
   color: var(--ink-faint);
   margin: 40px 0 14px;
 }
-.applied-wrap { margin-top: 8px; }
-.stack-muted .card { opacity: 0.62; }
 
 /* ---- Setup tab ---- */
 .setup-card {
@@ -254,25 +252,52 @@ a:hover { text-decoration: underline; }
 .posting-link { font-size: 13px; color: var(--ink-faint); }
 .posting-link:hover { color: var(--accent); }
 
-/* scores */
-.scores { display: flex; gap: 12px; margin: 18px 0 4px; }
+/* scores - three stacked persona rows */
+.scores { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 4px; }
 .score {
-  flex: 1;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  padding: 11px 14px;
   background: var(--bg);
 }
 .score.is-rec {
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
-.score-label { font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 6px; }
+.score-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.score-label {
+  font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 8px;
+}
 .score.is-rec .score-label { color: var(--accent); }
-.score-val { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); margin-top: 2px; }
+.rec-tag {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--accent); background: var(--surface);
+  border: 1px solid var(--accent-line);
+  padding: 1px 7px; border-radius: 999px;
+}
+.score-val { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
 .score.is-rec .score-val { color: var(--accent); }
 .score-val.na { color: var(--ink-faint); font-weight: 500; }
-.check { color: var(--accent); font-weight: 700; }
+.score-reason { margin: 4px 0 0; font-size: 13px; color: var(--ink-faint); line-height: 1.45; }
+.score.is-rec .score-reason { color: var(--accent); opacity: 0.85; }
+
+/* pick panel - choose a persona to apply with */
+.pick { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.pick-label { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+.pick-choices { display: flex; gap: 10px; flex-wrap: wrap; }
+.pick-btn {
+  appearance: none; font: inherit; font-size: 14px; font-weight: 500;
+  padding: 9px 16px;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--ink); border-radius: var(--radius-sm); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.pick-btn:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.pick-btn.is-rec { border-color: var(--accent); color: var(--accent); }
+.pick-btn:disabled { opacity: 0.55; cursor: default; }
+.pick-foot { margin-top: 12px; display: flex; }
+.pick-foot .btn-delete { margin-left: 0; }
 
 /* card actions */
 .card-actions { margin-top: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -318,6 +343,10 @@ a:hover { text-decoration: underline; }
   vertical-align: -2px;
   margin-right: 7px;
 }
+.spinner-dark {
+  border-color: var(--accent-line);
+  border-top-color: var(--accent);
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* prep panel */
@@ -326,24 +355,15 @@ a:hover { text-decoration: underline; }
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
-.prep-rec { font-size: 14px; color: var(--ink-soft); margin: 0 0 14px; }
+.prep-rec { font-size: 14px; color: var(--ink-soft); margin: 0 0 6px; }
 .prep-rec strong { color: var(--ink); }
-.prep-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.persona-toggle { margin-top: 16px; font-size: 13px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.persona-toggle button {
-  appearance: none; font: inherit; font-size: 13px;
-  background: transparent; border: 1px solid var(--line-strong);
-  color: var(--ink-soft); padding: 5px 11px; border-radius: 999px; cursor: pointer;
-}
-.persona-toggle button:hover { border-color: var(--accent-line); color: var(--accent); }
-.swap-hint { margin: 14px 0 0; font-size: 13px; color: var(--ink-faint); }
-
-/* applied badge */
-.applied-badge {
-  font-size: 12px; font-weight: 600; color: var(--accent);
-  background: var(--accent-soft); border: 1px solid var(--accent-line);
-  padding: 3px 10px; border-radius: 999px;
-}
+.prep-docs { font-size: 13px; color: var(--ink-faint); margin: 0 0 14px; }
+.prep-docs-label { color: var(--ink-faint); }
+.doc-link { color: var(--accent); text-decoration: none; }
+.doc-link:hover { text-decoration: underline; }
+.doc-sep { color: var(--ink-faint); }
+.prep-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.prep-actions .btn-delete { margin-left: auto; }
 
 /* discover */
 .discover-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }

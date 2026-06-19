@@ -112,6 +112,20 @@ export async function scoreSnippet(role) {
   return runClaudeJson(prompt);
 }
 
+// Authoritative scoring: score the FULL JD against all 3 personas in one CLI call.
+// Returns {company, role, variant1:{score,reason}, variant2:{...}, variant3:{...}, top:{persona,score,reason}}.
+export async function scoreFullJd3(role, jdBody) {
+  const tpl = await loadPromptTemplate('fulljd-score3');
+  const prompt = fillTemplate(tpl, {
+    jd_body: jdBody || '',
+    company: role.company || '',
+    role: role.role || '',
+    location: role.location || '',
+    ats_url: role.ats_url || '',
+  });
+  return runClaudeJson(prompt);
+}
+
 export async function rescoreFullJd(role, jdBody) {
   const tpl = await loadPromptTemplate('fulljd-rescore');
   const prompt = fillTemplate(tpl, {

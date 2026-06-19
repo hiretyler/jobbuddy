@@ -22,8 +22,12 @@ tracks the outcome.
 3. **Applied** - one click writes a clean row to the **Applications** tab (your tracker). The
    dated career-archive folder (created at Prep) holds the JD + a notes file; you drop your
    printed resume/CL PDFs in there.
-4. **Scan inbox** - a manual button reads Gmail and updates statuses (confirmation / rejection /
-   interview) on your applied rows. No background polling.
+4. **Status updates** - a Google Apps Script (`apps-script/`) runs on a time trigger as your
+   Google account, reads Gmail, and updates statuses (rejection / interview) on your applied
+   rows. This replaced the old in-app "Scan inbox" button. No background polling in the Node app.
+   Note: with no local `claude` CLI available, the Apps Script is conservative - an ambiguous
+   rejection (a rejection phrase without a matching application-confirmation email) is left
+   unchanged and only flagged in the run log, never auto-marked. See `apps-script/README.md`.
 
 A **Setup** tab in the app has the draggable bookmarklet and relaunch-from-a-fresh-clone steps.
 
@@ -39,8 +43,9 @@ Personal data is gitignored and loaded at runtime, with tracked `*.example.json`
 - `secrets/contact.json` - resume contact info, injected into the persona HTML placeholders.
 - `secrets/master-bank.json` - the career bank that powers the ATS swap suggestions.
 
-A fresh clone needs these restored (plus `.env`, `secrets/service-account.json`,
-`tokens/gmail.json`). The Setup tab lists the steps.
+A fresh clone needs these restored (plus `.env`, `secrets/service-account.json`). The Setup tab
+lists the steps. The Node app no longer uses Gmail OAuth: the old `tokens/gmail.json` and the
+`GMAIL_OAUTH_*` / `GMAIL_TOKEN_PATH` `.env` keys are unused (Gmail scanning moved to `apps-script/`).
 
 ## Sheet (2 tabs)
 - **Inbox** - the app's working queue (`new -> scored -> prepped -> applied`). JD body stored
@@ -56,7 +61,8 @@ Schema details: `docs/SCHEMA.md`. Code uses snake_case keys; the sheet shows pre
   it is just the web server, no pollers.
 - Manual run: `npm start`. Bootstrap/repair the sheet: `npm run bootstrap-sheet`.
 - All model work via the headless `claude` CLI (no Anthropic API). Google Sheets is storage.
-  Gmail OAuth + service account reused from applysprint (same credentials).
+  Service account reused from applysprint. Gmail status scanning runs as a separate Apps Script
+  (`apps-script/`) under your Google account - not part of the Node app.
 
 ## Stack
 Node + Express, Google Sheets API, `claude` CLI subprocess, jsdom. Five npm deps.

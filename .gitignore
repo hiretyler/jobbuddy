@@ -13,4 +13,6 @@ cache/bespoke-prompts/*.md
 # local-only Claude Code settings
 .claude/settings.local.json
 logs/
+# realign scratch workspace - source persona drafts + real career data, local-only
+jun17realign/
 

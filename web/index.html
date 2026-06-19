@@ -13,17 +13,17 @@
       <nav class="actions">
         <button id="tab-inbox" class="navbtn is-active" type="button">Inbox</button>
         <button id="tab-discover" class="navbtn" type="button">Discover</button>
-        <button id="scan-btn" class="navbtn" type="button">Scan inbox</button>
         <button id="tab-setup" class="navbtn" type="button">Setup</button>
         <a class="navbtn" href="https://docs.google.com/spreadsheets/d/1DKR4dAEnb_WddMlw_xGucqwG6nt6_l83Vt5SdTWh_BI" target="_blank" rel="noopener">Open tracker</a>
         <div class="menu">
           <button id="resumes-btn" class="navbtn" type="button" aria-haspopup="true" aria-expanded="false">Canonical resumes</button>
           <div id="resumes-menu" class="menu-pop" hidden>
-            <a href="/api/resume/persona/variant1" target="_blank" rel="noopener">Resume - Enablement &amp; L&amp;D</a>
+            <a href="/api/resume/persona/variant1" target="_blank" rel="noopener">Resume - GTM Enablement</a>
             <a href="/api/resume/persona/variant2" target="_blank" rel="noopener">Resume - Customer Education</a>
-            <a href="/api/cover-letter/persona/variant1" target="_blank" rel="noopener">Cover letter - Enablement &amp; L&amp;D</a>
+            <a href="/api/resume/persona/variant3" target="_blank" rel="noopener">Resume - AI Adoption</a>
+            <a href="/api/cover-letter/persona/variant1" target="_blank" rel="noopener">Cover letter - GTM Enablement</a>
             <a href="/api/cover-letter/persona/variant2" target="_blank" rel="noopener">Cover letter - Customer Education</a>
-            <a href="/api/cover-letter/ai-adoption" target="_blank" rel="noopener">Cover letter - AI Adoption</a>
+            <a href="/api/cover-letter/persona/variant3" target="_blank" rel="noopener">Cover letter - AI Adoption</a>
           </div>
         </div>
       </nav>
@@ -46,10 +46,6 @@
     <section id="view-inbox" class="view">
       <div id="inbox-empty" class="empty" hidden>Nothing in your inbox yet. Paste a URL above to start.</div>
       <div id="inbox-list" class="stack"></div>
-      <div id="applied-wrap" class="applied-wrap" hidden>
-        <h2 class="section-head">Applied</h2>
-        <div id="applied-list" class="stack stack-muted"></div>
-      </div>
     </section>
 
     <!-- DISCOVER -->
