@@ -135,9 +135,8 @@ async function rejectJob(job, card, btn) {
   const data = await api(`/api/reject/${encodeURIComponent(job.job_id)}`, { method: 'POST' });
   if (data.ok) {
     deletedIds.add(job.job_id);
-    card.remove();
     toast(`Rejected: ${label}`);
-    $('#inbox-empty').hidden = $('#inbox-list').children.length > 0;
+    loadInbox();
   } else {
     btn.disabled = false;
     btn.textContent = 'Reject';

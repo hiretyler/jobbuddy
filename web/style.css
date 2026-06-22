@@ -52,11 +52,15 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
+.brand-mark { display: block; border-radius: 5px; }
 .actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 
 .navbtn {
