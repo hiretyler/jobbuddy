@@ -4,15 +4,35 @@
 <meta charset="utf-8">
 <title>JobBuddy - capturing JD</title>
 <style>
-  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 2em; color: #222; }
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 1.5em; color: #222; }
   .ok { color: #0a7d27; }
   .err { color: #b00020; }
   pre { background: #f4f4f4; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+  #paste { display: none; }
+  #paste h2 { font-size: 1.05em; margin: 0 0 4px; }
+  #paste p.note { color: #555; margin: 0 0 10px; font-size: 13px; }
+  #jd { width: 100%; box-sizing: border-box; height: 320px; padding: 10px; border: 1px solid #ccc;
+        border-radius: 6px; font: 13px/1.45 ui-monospace, Menlo, monospace; resize: vertical; }
+  #meta { color: #777; font-size: 12px; margin: 6px 0 10px; }
+  button { padding: 9px 16px; background: #1a1a1a; color: #fff; border: 0; border-radius: 6px;
+           font-weight: 600; cursor: pointer; }
+  button:hover { background: #333; }
+  .hint { color: #b00020; font-size: 13px; margin-left: 10px; }
 </style>
 </head>
 <body>
 <div id="status">Capturing...</div>
 <pre id="detail" hidden></pre>
+
+<div id="paste">
+  <h2>Paste the job description</h2>
+  <p class="note">JobBuddy couldn't find a description on this page (it looks like a careers/landing page). Select the JD on the page - or copy it from the LinkedIn posting - and paste it below.</p>
+  <textarea id="jd" placeholder="Paste the full job description here..."></textarea>
+  <div id="meta"></div>
+  <button id="save" type="button">Save to JobBuddy</button>
+  <span id="hint" class="hint"></span>
+</div>
+
 <script>
 (function(){
   var statusEl = document.getElementById('status');
@@ -36,26 +56,56 @@
     return;
   }
 
-  fetch('http://localhost:3000/jd-capture', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).then(function(r){
-    if (!r.ok) return r.text().then(function(t){ throw new Error(r.status + ': ' + t) });
-    return r.json().catch(function(){ return {} });
-  }).then(function(data){
-    show('Saved to JobBuddy', 'ok');
-    try {
-      if (typeof BroadcastChannel === 'function') {
-        var bc = new BroadcastChannel('jobbuddy');
-        bc.postMessage({ type: 'jd-captured', job_id: data && data.job_id, url: payload && payload.url });
-        bc.close();
-      }
-    } catch (_e) {}
-    setTimeout(function(){ window.close() }, 1500);
-  }).catch(function(e){
-    show('Save failed - window left open for retry.', 'err', String(e && e.message || e));
-  });
+  // POST the payload (body already set) to JobBuddy, broadcast, and close.
+  function submit(){
+    show('Saving to JobBuddy...');
+    return fetch('http://localhost:3000/jd-capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function(r){
+      if (!r.ok) return r.text().then(function(t){ throw new Error(r.status + ': ' + t) });
+      return r.json().catch(function(){ return {} });
+    }).then(function(data){
+      show('Saved to JobBuddy', 'ok');
+      try {
+        if (typeof BroadcastChannel === 'function') {
+          var bc = new BroadcastChannel('jobbuddy');
+          bc.postMessage({ type: 'jd-captured', job_id: data && data.job_id, url: payload && payload.url });
+          bc.close();
+        }
+      } catch (_e) {}
+      setTimeout(function(){ window.close() }, 1500);
+    }).catch(function(e){
+      show('Save failed - window left open for retry.', 'err', String(e && e.message || e));
+    });
+  }
+
+  // No JD on the page: show a textarea so the user can paste it themselves.
+  if (payload.needs_paste || !String(payload.body || '').trim()) {
+    statusEl.hidden = true;
+    var pasteEl = document.getElementById('paste');
+    var jdEl = document.getElementById('jd');
+    var hintEl = document.getElementById('hint');
+    var metaEl = document.getElementById('meta');
+    pasteEl.style.display = 'block';
+    var bits = [];
+    if (payload.company) bits.push(payload.company);
+    if (payload.role) bits.push(payload.role);
+    metaEl.textContent = (bits.join(' - ') || payload.url || '');
+    jdEl.focus();
+    document.getElementById('save').addEventListener('click', function(){
+      var text = (jdEl.value || '').trim();
+      if (text.length < 300){ hintEl.textContent = 'That looks too short - paste the full description.'; jdEl.focus(); return }
+      hintEl.textContent = '';
+      payload.body = text;
+      payload.needs_paste = false;
+      submit();
+    });
+    return;
+  }
+
+  submit();
 })();
 </script>
 </body>
