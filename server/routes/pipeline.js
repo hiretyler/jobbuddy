@@ -439,6 +439,16 @@ router.post('/api/score/:job_id', async (req, res, next) => {
     const { job_id } = req.params;
     const row = await findRow('Inbox', 'job_id', job_id);
     if (!row) return res.status(404).json({ ok: false, error: `job not found: ${job_id}` });
+    // Optional pasted body: when the captured JD was junk (cookie banner, careers shell),
+    // the user can paste the real description from the inbox card and re-score in place.
+    const pasted = String(req.body?.body || '').trim();
+    if (pasted) {
+      if (pasted.length < MIN_BODY_CHARS) {
+        return res.status(400).json({ ok: false, error: 'that looks too short - paste the full description' });
+      }
+      await updateRow('Inbox', 'job_id', job_id, { jd_body: pasted, jd_length: String(pasted.length) });
+      row.jd_body = pasted;
+    }
     if (String(row.jd_body || '').trim().length < MIN_BODY_CHARS) {
       return res.status(400).json({ ok: false, error: 'no JD body to score - capture it with the bookmarklet first' });
     }

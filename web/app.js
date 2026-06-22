@@ -109,6 +109,10 @@ function renderPickPanel(job, card) {
   const pick = el('div', { class: 'pick' });
   const rec = job.recommended_persona;
 
+  // All three scores zero/blank means the capture had no real JD (cookie banner, careers
+  // shell). Surface the paste-and-rescore affordance so it can be fixed without re-capturing.
+  if (PERSONA_ORDER.every((p) => !Number(job[`${p}_score`]))) pick.append(pasteJdBlock(job));
+
   const choices = el('div', { class: 'pick-choices' }, PERSONA_ORDER.map((p) => {
     const b = el('button', {
       class: 'pick-btn' + (rec === p ? ' is-rec' : ''),
@@ -125,6 +129,45 @@ function renderPickPanel(job, card) {
   pick.append(el('div', { class: 'pick-foot' }, [rejectBtn]));
 
   return pick;
+}
+
+// Inline "paste the JD and re-score" affordance for cards whose capture had no real description.
+function pasteJdBlock(job) {
+  const wrap = el('div', { class: 'paste-jd' });
+  const note = el('p', { class: 'paste-jd-note', text: 'No job description was captured. Paste it to score the personas.' });
+  const openBtn = el('button', { class: 'btn-ghost', type: 'button', text: 'Paste job description' });
+  openBtn.addEventListener('click', () => {
+    const ta = el('textarea', { class: 'paste-jd-input', placeholder: 'Paste the full job description here…' });
+    const save = el('button', { class: 'btn-primary', type: 'button', text: 'Score it' });
+    const cancel = el('button', { class: 'btn-ghost', type: 'button', text: 'Cancel' });
+    const hint = el('span', { class: 'paste-jd-hint' });
+    const editor = el('div', { class: 'paste-jd-editor' }, [ta, el('div', { class: 'paste-jd-actions' }, [save, cancel, hint])]);
+    wrap.replaceChild(editor, openBtn);
+    ta.focus();
+    cancel.addEventListener('click', () => wrap.replaceChild(openBtn, editor));
+    save.addEventListener('click', () => pasteJd(job, ta, save, hint));
+  });
+  wrap.append(note, openBtn);
+  return wrap;
+}
+
+async function pasteJd(job, ta, btn, hint) {
+  const text = (ta.value || '').trim();
+  if (text.length < 300) { hint.textContent = 'That looks too short - paste the full description.'; ta.focus(); return; }
+  hint.textContent = '';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span>Scoring…';
+  const data = await api(`/api/score/${encodeURIComponent(job.job_id)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: text }),
+  });
+  if (data.ok) {
+    toast(`Scored: ${job.company || job.title || 'job'}`);
+    loadInbox();
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Score it';
+    hint.textContent = data.error || 'Could not score.';
+  }
 }
 
 async function rejectJob(job, card, btn) {

@@ -288,6 +288,16 @@ a:hover { text-decoration: underline; }
 
 /* pick panel - choose a persona to apply with */
 .pick { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.paste-jd { margin-bottom: 16px; }
+.paste-jd-note { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); }
+.paste-jd-input {
+  width: 100%; box-sizing: border-box; min-height: 160px; resize: vertical;
+  padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  font: inherit; font-size: 13px; line-height: 1.45; color: var(--ink); background: var(--surface);
+}
+.paste-jd-input:focus { outline: none; border-color: var(--accent); }
+.paste-jd-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.paste-jd-hint { font-size: 13px; color: var(--danger, #b00020); }
 .pick-label { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
 .pick-choices { display: flex; gap: 10px; flex-wrap: wrap; }
 .pick-btn {
