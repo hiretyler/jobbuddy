@@ -109,9 +109,14 @@ function renderPickPanel(job, card) {
   const pick = el('div', { class: 'pick' });
   const rec = job.recommended_persona;
 
-  // All three scores zero/blank means the capture had no real JD (cookie banner, careers
-  // shell). Surface the paste-and-rescore affordance so it can be fixed without re-capturing.
-  if (PERSONA_ORDER.every((p) => !Number(job[`${p}_score`]))) pick.append(pasteJdBlock(job));
+  // Surface the paste-and-rescore affordance when the capture had no usable JD. Two signals:
+  // (a) all three scores zero/blank; (b) the scorer says the body was missing/unreadable
+  // (cookie banner, careers shell) - it then scores low off the title alone, not a 0. Keep the
+  // body-signal regex tight so a genuinely low-scoring *real* JD does not trip it.
+  const allZero = PERSONA_ORDER.every((p) => !Number(job[`${p}_score`]));
+  const reasons = PERSONA_ORDER.map((p) => job[`${p}_reason`] || '').join(' ');
+  const noBody = /no jd body|no job content|body was (unreadable|empty|missing)|cookie.?consent|unreadable[^.]*html|no readable (jd|job|body)/i.test(reasons);
+  if (allZero || noBody) pick.append(pasteJdBlock(job));
 
   const choices = el('div', { class: 'pick-choices' }, PERSONA_ORDER.map((p) => {
     const b = el('button', {
@@ -134,7 +139,7 @@ function renderPickPanel(job, card) {
 // Inline "paste the JD and re-score" affordance for cards whose capture had no real description.
 function pasteJdBlock(job) {
   const wrap = el('div', { class: 'paste-jd' });
-  const note = el('p', { class: 'paste-jd-note', text: 'No job description was captured. Paste it to score the personas.' });
+  const note = el('p', { class: 'paste-jd-note', text: 'No readable job description was captured. Paste it to re-score the personas.' });
   const openBtn = el('button', { class: 'btn-ghost', type: 'button', text: 'Paste job description' });
   openBtn.addEventListener('click', () => {
     const ta = el('textarea', { class: 'paste-jd-input', placeholder: 'Paste the full job description here…' });
