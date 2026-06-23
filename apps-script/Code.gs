@@ -12,9 +12,12 @@
  *
  * BEHAVIOR CHANGE vs the Node app: Apps Script cannot call the local `claude`
  * CLI, so the Claude-escalation fallback for ambiguous rejections is gone.
- * Conservative rule instead: a rejection phrase is only acted on when the
- * paired-confirmation gate also fires. A rejection phrase WITHOUT a confirmation
- * is left UNCHANGED (we never auto-mark it; it is just flagged in the run log).
+ * Two-tier rule instead: an unambiguous STRONG rejection clause ("decided to
+ * move forward with other candidates") auto-marks on its own; a soft WEAK phrase
+ * ("unfortunately") only acts when the paired-confirmation gate also fires, and a
+ * weak phrase WITHOUT a confirmation is left UNCHANGED (just flagged in the log).
+ * All company attribution is strict (From/Subject, non-generic sender) so neither
+ * rejections nor interviews can be misattributed by an incidental body mention.
  */
 
 // ---- Config -----------------------------------------------------------------
@@ -38,8 +41,11 @@ var TERMINAL = ['not selected', 'offer', 'withdrawn'];
 
 // ---- Phrase banks (ported verbatim from gmail.js / status.js) ---------------
 
-var REJECTION_PHRASES = [
-  'unfortunately',
+// STRONG rejection phrases are unambiguous full clauses - if one of these
+// appears in mail the company actually sent (From/Subject-attributed, see
+// belongsToCompany), it IS a rejection on its own, no confirmation email needed.
+// e.g. Eptura: "we have decided to move forward with other candidates".
+var STRONG_REJECTION_PHRASES = [
   'not moving forward',
   'will not be moving forward',
   'decided to move forward with other candidates',
@@ -50,12 +56,23 @@ var REJECTION_PHRASES = [
   'not be proceeding',
   'not selected',
   'pursue other candidates',
-  'other applicants',
   'we have decided not to',
-  'no longer under consideration',
+  'no longer under consideration'
+];
+
+// WEAK rejection phrases are soft/generic and appear in plenty of non-rejection
+// mail ("unfortunately ..."). They only count when the paired-confirmation gate
+// also fires (the company sent an application-received email too).
+var WEAK_REJECTION_PHRASES = [
+  'unfortunately',
+  'other applicants',
   'wish you the best in your',
   'wish you success in your search'
 ];
+
+// Any rejection signal at all - used to keep rejection mail out of the interview
+// classifier (a rejection is never an interview).
+var REJECTION_PHRASES = STRONG_REJECTION_PHRASES.concat(WEAK_REJECTION_PHRASES);
 
 var CONFIRMATION_PHRASES = [
   'thank you for applying',
@@ -88,7 +105,6 @@ var INTERVIEW_PHRASES = [
   'move forward with your application',
   'move forward in the process',
   'move you forward',
-  'next steps',
   'next step in the process',
   'phone screen',
   'phone interview',
@@ -99,6 +115,26 @@ var INTERVIEW_PHRASES = [
   'available for a call',
   'your availability',
   'book a time'
+];
+
+// Calendar / meeting-tool infrastructure senders. An interview invite for one
+// company is frequently DELIVERED by these (a Google Calendar invite, a Zoom
+// link, a Calendly confirmation), and their From address or body mentions the
+// tool's brand - not the hiring company. We must not attribute such mail to a
+// "Google" / "Zoom" application just because the brand appears in From/body.
+// The real company still matches via the SUBJECT (the event/email title names
+// it), which is checked independently of this list.
+var GENERIC_SENDERS = [
+  'calendar-notification@google.com',
+  'calendar.google.com',
+  'calendly.com',
+  'savvycal.com',
+  'cal.com',
+  '@zoom.us',
+  'zoom.us',
+  'microsoft.com',
+  'outlook.com',
+  'teams.microsoft.com'
 ];
 
 // ---- Helpers ----------------------------------------------------------------
@@ -113,6 +149,27 @@ function phraseHit(text, phrases) {
     if (lower.indexOf(phrases[i]) !== -1) return true;
   }
   return false;
+}
+
+function isGenericSender(from) {
+  var f = (from || '').toLowerCase();
+  for (var i = 0; i < GENERIC_SENDERS.length; i++) {
+    if (f.indexOf(GENERIC_SENDERS[i]) !== -1) return true;
+  }
+  return false;
+}
+
+// Does this message genuinely belong to `name` (a normalized company)? Strict on
+// purpose: the company must be named in the FROM (and that From must not be
+// generic calendar/meeting infrastructure) or in the SUBJECT. A body-only
+// mention does NOT count - that is how unrelated mail (an invite delivered over
+// Zoom, a calendar event, a recruiter signature) used to get misattributed.
+function belongsToCompany(m, name) {
+  if (!name) return false;
+  var fromMatch = !isGenericSender(m.from) &&
+    (m.from || '').toLowerCase().indexOf(name) !== -1;
+  var subjMatch = (m.subject || '').toLowerCase().indexOf(name) !== -1;
+  return fromMatch || subjMatch;
 }
 
 function inSet(set, value) {
@@ -174,15 +231,20 @@ function parseDate(value) {
 
 // ---- Classification (ports classifyRejection + findInterviewMsg) ------------
 
-// Returns {rejected, ambiguous, reason}. rejected=true only when a confirmation
-// email exists from the company AND a rejection phrase is present (high
-// precision). Phrase-without-confirmation is ambiguous (left unchanged - the
-// no-Claude conservative rule).
+// Returns {rejected, ambiguous, reason}. Two precision tiers:
+//   - A STRONG rejection phrase in mail that genuinely belongs to the company
+//     (belongsToCompany: From/Subject-attributed, non-generic sender) is a
+//     rejection on its own - no confirmation email required.
+//   - A WEAK rejection phrase only counts when the paired-confirmation gate also
+//     fires (an application-received email from the same company). Weak phrase
+//     without confirmation is ambiguous - left unchanged (the no-Claude rule).
+// The same body-only-mention trap that produced false interviews would produce
+// false rejections, so company ownership here is the strict belongsToCompany
+// test, not a loose body match.
 function classifyRejection(company, messages) {
   var name = normKey(company);
   var fromCompany = messages.filter(function (m) {
-    var blob = (m.from + ' ' + m.subject + ' ' + m.body).toLowerCase();
-    return name && blob.indexOf(name) !== -1;
+    return belongsToCompany(m, name);
   });
   if (!fromCompany.length) {
     return { rejected: false, ambiguous: false, reason: 'no-company-mail' };
@@ -192,19 +254,21 @@ function classifyRejection(company, messages) {
     return phraseHit(m.subject + ' ' + m.body, CONFIRMATION_PHRASES);
   });
 
-  var rejectMsg = null;
-  for (var i = 0; i < fromCompany.length; i++) {
-    var m = fromCompany[i];
-    if (phraseHit(m.subject + ' ' + m.body, REJECTION_PHRASES)) {
-      if (!rejectMsg || m.date > rejectMsg.date) rejectMsg = m;
-    }
+  var strongHit = fromCompany.some(function (m) {
+    return phraseHit(m.subject + ' ' + m.body, STRONG_REJECTION_PHRASES);
+  });
+  if (strongHit) {
+    return { rejected: true, ambiguous: false, reason: 'strong-phrase' };
   }
 
-  if (rejectMsg && hasConfirmation) {
-    return { rejected: true, ambiguous: false, reason: 'phrase+confirmation' };
+  var weakHit = fromCompany.some(function (m) {
+    return phraseHit(m.subject + ' ' + m.body, WEAK_REJECTION_PHRASES);
+  });
+  if (weakHit && hasConfirmation) {
+    return { rejected: true, ambiguous: false, reason: 'weak-phrase+confirmation' };
   }
-  if (rejectMsg && !hasConfirmation) {
-    return { rejected: false, ambiguous: true, reason: 'phrase-no-confirmation' };
+  if (weakHit && !hasConfirmation) {
+    return { rejected: false, ambiguous: true, reason: 'weak-phrase-no-confirmation' };
   }
   if (hasConfirmation) {
     return { rejected: false, ambiguous: false, reason: 'confirmation-only' };
@@ -212,16 +276,32 @@ function classifyRejection(company, messages) {
   return { rejected: false, ambiguous: false, reason: 'company-mail-no-signal' };
 }
 
-// Newest message from the company that hits an interview-request phrase, or null.
+// Newest interview-request message that genuinely belongs to this company, or
+// null. Precision matters far more than recall here (false interviews are the
+// reported failure mode), so the company match is deliberately strict:
+//
+//   - The company must appear in the FROM or the SUBJECT, NOT just the body.
+//     A body-only mention is almost always incidental - an interview invite for
+//     company A whose body happens to name a tool/brand B ("join via Zoom",
+//     "Google Calendar", a recruiter signature) must not register as an
+//     interview for application B. This was the source of the phantom
+//     Zoom / Google / Harvey interviews.
+//   - A FROM match is ignored when the sender is generic calendar/meeting
+//     infrastructure (Google Calendar, Zoom, Calendly...), because those deliver
+//     other companies' interviews. The real company still matches on SUBJECT
+//     (the event title names it), so genuine invites are not lost.
+//   - A message that reads as a rejection is never treated as an interview, even
+//     if it contains a stray scheduling phrase ("we wish you the best in your
+//     next steps"). This was the Eptura false interview.
 function findInterviewMsg(company, messages) {
   var name = normKey(company);
-  var fromCompany = messages.filter(function (m) {
-    var blob = (m.from + ' ' + m.subject + ' ' + m.body).toLowerCase();
-    return name && blob.indexOf(name) !== -1;
-  });
+  if (!name) return null;
   var best = null;
-  for (var i = 0; i < fromCompany.length; i++) {
-    var m = fromCompany[i];
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    if (!belongsToCompany(m, name)) continue;
+    // A rejection is not an interview, regardless of stray scheduling phrases.
+    if (phraseHit(m.subject + ' ' + m.body, REJECTION_PHRASES)) continue;
     if (phraseHit(m.subject + ' ' + m.body, INTERVIEW_PHRASES)) {
       if (!best || m.date > best.date) best = m;
     }

@@ -15,4 +15,7 @@ cache/bespoke-prompts/*.md
 logs/
 # realign scratch workspace - source persona drafts + real career data, local-only
 jun17realign/
+# clasp project link - holds the private bound Script ID (public repo), local-only
+.clasp.json
+apps-script/.clasp.json
 

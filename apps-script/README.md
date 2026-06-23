@@ -20,11 +20,21 @@ back to the same row.
   blank. Terminal rows (`not selected`, `offer`, `withdrawn`) are skipped and
   never downgraded.
 - Classification precedence: **rejection > interview-request > nothing**.
-  - Rejection -> `Status = not selected`. Requires the paired-confirmation gate
-    (a rejection phrase AND an application-confirmation email from the same
-    company) for high precision.
+  - Rejection -> `Status = not selected`. Two tiers: an unambiguous **strong**
+    rejection clause ("decided to move forward with other candidates") auto-marks
+    on its own; a **weak** phrase ("unfortunately") only acts when the paired-
+    confirmation gate also fires (an application-received email from the same
+    company). All company attribution is strict (the company must be named in the
+    email's From or Subject, generic calendar/meeting senders excluded), so an
+    incidental body mention cannot misattribute a rejection.
   - Interview-request phrase -> `Status = interview`, `Interview? = yes`
-    (never regresses a row already at `interview`).
+    (never regresses a row already at `interview`). The company match is strict:
+    the company must appear in the email's **From or Subject**, not merely its
+    body, and generic calendar/meeting senders (Google Calendar, Zoom, Calendly)
+    are ignored as a From match - so an interview invite for company A that is
+    delivered over Zoom or mentions another brand in its body does not register
+    as an interview for company B. A message that reads as a rejection is never
+    counted as an interview.
 - Idempotent and safe to run repeatedly on a trigger.
 - Columns are matched by the **header row** (the pretty headers the bootstrap
   writes, e.g. "Date Applied", "Status", "Interview?"), so it is robust to
@@ -35,10 +45,11 @@ back to the same row.
 The Node app escalated ambiguous rejections (a rejection phrase with NO matching
 confirmation email) to the local `claude` CLI. Apps Script cannot call that CLI.
 
-Conservative replacement: an ambiguous rejection is **left unchanged**. The row
-is NOT auto-marked `not selected`; it is only logged ("Flagged for review") in
-the run log so you can eyeball it yourself. This trades a little recall for zero
-false rejections.
+Replacement: only a **weak** rejection phrase with no confirmation is ambiguous,
+and it is **left unchanged** - NOT auto-marked `not selected`, only logged
+("Flagged for review") so you can eyeball it. Strong rejection clauses are
+unambiguous and auto-mark without the gate, so the ambiguous bucket is now small.
+This trades a little recall for near-zero false rejections.
 
 ## Deploy steps (sheet-bound, recommended)
 
